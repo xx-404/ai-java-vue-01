@@ -39,6 +39,10 @@ export interface SysUser {
   userType?: string   // 用户类型: admin-后台管理员 pc-PC前台用户 app-App/小程序用户
   openId?: string     // 微信openId
   isQuit?: number     // 是否离职(0-否 1-是)
+  expireTime?: string // 失效时间(临时外协账号使用)
+  isTemp?: number     // 是否临时外协账号(0-否 1-是)
+  remainingDays?: number // 剩余天数
+  willExpire?: boolean    // 是否即将过期
   postNames?: string  // 岗位名称列表
   createTime?: string
 }
@@ -195,6 +199,12 @@ export const postApi = {
 }
 
 // ==================== 角色管理 ====================
+export interface RoleCopyDetailResult {
+  role: SysRole
+  menuIds: number[]
+  deptIds: number[]
+}
+
 export const roleApi = {
   page(params: { page: number; pageSize: number; name?: string; status?: number }): Promise<PageResult<SysRole>> {
     return request({ url: '/sys/role/page', method: 'get', params })
@@ -218,6 +228,14 @@ export const roleApi = {
   
   delete(id: number): Promise<void> {
     return request({ url: `/sys/role/${id}`, method: 'delete' })
+  },
+
+  getCopyDetail(id: number): Promise<RoleCopyDetailResult> {
+    return request({ url: `/sys/role/copy/${id}`, method: 'get' })
+  },
+
+  copy(data: { role: SysRole; menuIds: number[]; deptIds?: number[] }): Promise<void> {
+    return request({ url: '/sys/role/copy', method: 'post', data })
   }
 }
 
@@ -436,6 +454,39 @@ export interface SysFileConfig {
   createTime?: string
 }
 
+// ==================== 临时外协用户管理 ====================
+export interface TempUserDetailResult {
+  user: SysUser
+  menuIds: number[]
+}
+
+export const tempUserApi = {
+  page(params: { page: number; pageSize: number; username?: string; status?: number }): Promise<PageResult<SysUser>> {
+    return request({ url: '/sys/temp-user/page', method: 'get', params })
+  },
+  
+  detail(id: number): Promise<TempUserDetailResult> {
+    return request({ url: `/sys/temp-user/${id}`, method: 'get' })
+  },
+  
+  create(data: { user: SysUser; menuIds: number[] }): Promise<void> {
+    return request({ url: '/sys/temp-user', method: 'post', data })
+  },
+  
+  update(data: { user: SysUser; menuIds: number[] }): Promise<void> {
+    return request({ url: '/sys/temp-user', method: 'put', data })
+  },
+  
+  delete(id: number): Promise<void> {
+    return request({ url: `/sys/temp-user/${id}`, method: 'delete' })
+  },
+  
+  checkExpired(): Promise<void> {
+    return request({ url: '/sys/temp-user/check-expired', method: 'post' })
+  }
+}
+
+// ==================== 文件配置管理 ====================
 export const fileConfigApi = {
   page(params: { page: number; pageSize: number; name?: string; storageType?: string }): Promise<PageResult<SysFileConfig>> {
     return request({ url: '/sys/file-config/page', method: 'get', params })

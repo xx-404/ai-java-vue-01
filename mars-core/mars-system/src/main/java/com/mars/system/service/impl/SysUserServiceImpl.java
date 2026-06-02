@@ -15,14 +15,17 @@ import com.mars.system.entity.SysRole;
 import com.mars.system.entity.SysUser;
 import com.mars.system.entity.SysUserPost;
 import com.mars.system.entity.SysUserRole;
+import com.mars.system.entity.SysUserTempMenu;
 import com.mars.system.excel.SysUserExcel;
 import com.mars.system.excel.SysUserImportListener;
 import com.mars.system.mapper.SysDeptMapper;
+import com.mars.system.mapper.SysMenuMapper;
 import com.mars.system.mapper.SysPostMapper;
 import com.mars.system.mapper.SysRoleMapper;
 import com.mars.system.mapper.SysUserMapper;
 import com.mars.system.mapper.SysUserPostMapper;
 import com.mars.system.mapper.SysUserRoleMapper;
+import com.mars.system.mapper.SysUserTempMenuMapper;
 import com.mars.system.config.StpInterfaceImpl;
 import com.mars.system.service.SysUserService;
 import com.mars.system.helper.SystemConfigHelper;
@@ -34,6 +37,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -50,9 +55,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     private final SysUserRoleMapper userRoleMapper;
     private final SysUserPostMapper userPostMapper;
+    private final SysUserTempMenuMapper userTempMenuMapper;
     private final SysDeptMapper deptMapper;
     private final SysPostMapper postMapper;
     private final SysRoleMapper roleMapper;
+    private final SysMenuMapper menuMapper;
     private final SystemConfigHelper configHelper;
 
     private static final String DEFAULT_PASSWORD = "123456";
@@ -199,6 +206,11 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
 
     @Override
     public List<String> getPermissions(Long userId) {
+        // 超级管理员(admin)返回所有菜单权限标识
+        List<String> roleCodes = baseMapper.selectRoleCodesByUserId(userId);
+        if (roleCodes != null && roleCodes.contains("admin")) {
+            return menuMapper.selectAllPermissions();
+        }
         return baseMapper.selectPermissionsByUserId(userId);
     }
 
@@ -406,6 +418,139 @@ public class SysUserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impl
         } catch (IOException e) {
             log.error("读取Excel文件失败", e);
             throw new BusinessException("读取Excel文件失败");
+        }
+    }
+
+    @Override
+    public PageResult<SysUser> pageTempUsers(Integer page, Integer pageSize, String username, Integer status) {
+        Page<SysUser> pageParam = new Page<>(page, pageSize);
+        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SysUser::getIsTemp, 1)
+                .like(StringUtils.hasText(username), SysUser::getUsername, username)
+                .eq(status != null, SysUser::getStatus, status)
+                .eq(SysUser::getDeleted, 0)
+                .orderByDesc(SysUser::getCreateTime);
+
+        IPage<SysUser> result = baseMapper.selectPage(pageParam, wrapper);
+        result.getRecords().forEach(this::calculateExpireInfo);
+        return PageResult.of(result);
+    }
+
+    @Override
+    public SysUser getTempUserDetail(Long id) {
+        SysUser user = this.getById(id);
+        if (user != null) {
+            user.setPassword(null);
+            calculateExpireInfo(user);
+        }
+        return user;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void createTempUser(SysUser user, List<Long> menuIds) {
+        if (this.getByUsername(user.getUsername()) != null) {
+            throw new BusinessException("用户名已存在");
+        }
+        user.setIsTemp(1);
+        if (user.getExpireTime() == null) {
+            throw new BusinessException("临时账号必须设置失效时间");
+        }
+        String password = StringUtils.hasText(user.getPassword()) ? user.getPassword() : DEFAULT_PASSWORD;
+        user.setPassword(BCrypt.hashpw(password));
+        this.save(user);
+        saveTempUserMenus(user.getId(), menuIds);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void updateTempUser(SysUser user, List<Long> menuIds) {
+        SysUser existUser = this.getById(user.getId());
+        if (existUser == null) {
+            throw new BusinessException("用户不存在");
+        }
+        SysUser byUsername = this.getByUsername(user.getUsername());
+        if (byUsername != null && !byUsername.getId().equals(user.getId())) {
+            throw new BusinessException("用户名已存在");
+        }
+        user.setPassword(null);
+        user.setIsTemp(1);
+        this.updateById(user);
+        userTempMenuMapper.deleteByUserId(user.getId());
+        saveTempUserMenus(user.getId(), menuIds);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteTempUser(Long id) {
+        SysUser user = this.getById(id);
+        if (user == null || user.getIsTemp() != 1) {
+            throw new BusinessException("临时用户不存在");
+        }
+        this.removeById(id);
+        userTempMenuMapper.deleteByUserId(id);
+    }
+
+    @Override
+    public List<Long> getTempUserMenuIds(Long userId) {
+        return userTempMenuMapper.selectMenuIdsByUserId(userId);
+    }
+
+    @Override
+    public boolean isTempUserExpired(Long userId) {
+        SysUser user = this.getById(userId);
+        if (user == null || user.getIsTemp() != 1) {
+            return false;
+        }
+        return user.getExpireTime() != null && user.getExpireTime().isBefore(LocalDateTime.now());
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void disableExpiredTempUsers() {
+        LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(SysUser::getIsTemp, 1)
+                .eq(SysUser::getStatus, 1)
+                .lt(SysUser::getExpireTime, LocalDateTime.now())
+                .eq(SysUser::getDeleted, 0);
+
+        List<SysUser> expiredUsers = this.list(wrapper);
+        for (SysUser user : expiredUsers) {
+            user.setStatus(0);
+            this.updateById(user);
+            log.info("临时外协账号已过期，已自动禁用: userId={}, username={}", user.getId(), user.getUsername());
+        }
+    }
+
+    @Override
+    public List<String> getTempUserPermissions(Long userId) {
+        List<Long> menuIds = userTempMenuMapper.selectMenuIdsByUserId(userId);
+        if (menuIds.isEmpty()) {
+            return new ArrayList<>();
+        }
+        return menuMapper.selectPermissionsByMenuIds(menuIds);
+    }
+
+    private void saveTempUserMenus(Long userId, List<Long> menuIds) {
+        if (menuIds != null && !menuIds.isEmpty()) {
+            for (Long menuId : menuIds) {
+                SysUserTempMenu tempMenu = new SysUserTempMenu();
+                tempMenu.setUserId(userId);
+                tempMenu.setMenuId(menuId);
+                userTempMenuMapper.insert(tempMenu);
+            }
+        }
+    }
+
+    private void calculateExpireInfo(SysUser user) {
+        if (user.getExpireTime() != null) {
+            LocalDateTime now = LocalDateTime.now();
+            long days = ChronoUnit.DAYS.between(now, user.getExpireTime());
+            user.setRemainingDays((int) days);
+            user.setWillExpire(days <= 3 && days > 0);
+        } else {
+            user.setRemainingDays(null);
+            user.setWillExpire(false);
         }
     }
 }

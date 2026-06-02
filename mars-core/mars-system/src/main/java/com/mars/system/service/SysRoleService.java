@@ -55,4 +55,14 @@ public interface SysRoleService extends IService<SysRole> {
      * 根据角色编码获取角色
      */
     SysRole getByCode(String code);
+
+    /**
+     * 获取角色详情用于复制
+     */
+    SysRole getCopyDetail(Long id);
+
+    /**
+     * 复制角色
+     */
+    void copy(SysRole role, List<Long> menuIds, List<Long> deptIds);
 }

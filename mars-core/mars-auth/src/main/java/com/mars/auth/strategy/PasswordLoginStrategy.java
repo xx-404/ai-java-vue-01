@@ -167,5 +167,12 @@ public class PasswordLoginStrategy implements LoginStrategy {
             loginHelper.recordFailLog(user.getUsername(), "用户已离职");
             throw new BusinessException("用户已离职");
         }
+        // 检查临时外协账号是否过期
+        if (user.getIsTemp() == 1 && user.getExpireTime() != null) {
+            if (user.getExpireTime().isBefore(java.time.LocalDateTime.now())) {
+                loginHelper.recordFailLog(user.getUsername(), "临时账号已过期");
+                throw new BusinessException("临时外协账号已过期，请联系管理员");
+            }
+        }
     }
 }

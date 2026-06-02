@@ -100,4 +100,49 @@ public interface SysUserService extends IService<SysUser> {
      * @return 导入结果，包含successCount、failCount、errors
      */
     Map<String, Object> importUsers(MultipartFile file);
+
+    /**
+     * 分页查询临时外协用户
+     */
+    PageResult<SysUser> pageTempUsers(Integer page, Integer pageSize, String username, Integer status);
+
+    /**
+     * 获取临时用户详情
+     */
+    SysUser getTempUserDetail(Long id);
+
+    /**
+     * 创建临时外协账号
+     */
+    void createTempUser(SysUser user, List<Long> menuIds);
+
+    /**
+     * 更新临时外协账号
+     */
+    void updateTempUser(SysUser user, List<Long> menuIds);
+
+    /**
+     * 删除临时外协账号
+     */
+    void deleteTempUser(Long id);
+
+    /**
+     * 获取临时用户的菜单ID列表
+     */
+    List<Long> getTempUserMenuIds(Long userId);
+
+    /**
+     * 检查用户是否为临时外协账号且已过期
+     */
+    boolean isTempUserExpired(Long userId);
+
+    /**
+     * 禁用过期的临时账号并踢掉在线会话
+     */
+    void disableExpiredTempUsers();
+
+    /**
+     * 获取临时用户的权限列表
+     */
+    List<String> getTempUserPermissions(Long userId);
 }

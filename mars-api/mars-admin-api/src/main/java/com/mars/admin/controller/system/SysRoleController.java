@@ -100,6 +100,35 @@ public class SysRoleController {
         return Result.ok();
     }
 
+    /**
+     * 获取复制角色详情
+     */
+    @GetMapping("/copy/{id}")
+    @SaCheckPermission("sys:role:copy")
+    public Result<Map<String, Object>> getCopyDetail(@PathVariable Long id) {
+        SysRole role = roleService.getCopyDetail(id);
+        List<Long> menuIds = roleService.getMenuIds(id);
+        List<Long> deptIds = roleDeptMapper.selectDeptIdsByRoleId(id);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("role", role);
+        result.put("menuIds", menuIds);
+        result.put("deptIds", deptIds);
+        return Result.ok(result);
+    }
+
+    /**
+     * 复制角色
+     */
+    @PostMapping("/copy")
+    @SaCheckPermission("sys:role:copy")
+    @RepeatSubmit
+    @Log(title = "角色管理", businessType = BusinessType.INSERT)
+    public Result<Void> copy(@RequestBody RoleRequest request) {
+        roleService.copy(request.getRole(), request.getMenuIds(), request.getDeptIds());
+        return Result.ok();
+    }
+
     @Data
     public static class RoleRequest {
         private SysRole role;

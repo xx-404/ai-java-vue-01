@@ -6,6 +6,8 @@ import com.mars.common.entity.BaseEntity;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.time.LocalDateTime;
+
 /**
  * 系统用户
  */
@@ -90,4 +92,26 @@ public class SysUser extends BaseEntity {
      * 是否离职(0-否 1-是)
      */
     private Integer isQuit;
+
+    /**
+     * 失效时间(临时外协账号使用)
+     */
+    private LocalDateTime expireTime;
+
+    /**
+     * 是否临时外协账号(0-否 1-是)
+     */
+    private Integer isTemp;
+
+    /**
+     * 剩余天数（非数据库字段）
+     */
+    @TableField(exist = false)
+    private Integer remainingDays;
+
+    /**
+     * 是否即将过期（非数据库字段，3天内过期为即将过期）
+     */
+    @TableField(exist = false)
+    private Boolean willExpire;
 }
