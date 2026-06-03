@@ -30,15 +30,21 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-button v-if="hasPermission('sys:dict:add')" type="primary" @click="handleAdd">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          新增字典
-        </n-button>
+        <n-space justify="space-between" style="width: 100%">
+          <n-button v-if="hasPermission('sys:dict:add')" type="primary" @click="handleAdd">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+            新增字典
+          </n-button>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
+          </n-button>
+        </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysDictType) => row.id"
@@ -48,7 +54,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="pagination.pageSize"
+          v-model:page-size="preference.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -133,15 +139,25 @@
         </n-space>
       </template>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed } from 'vue'
+import { ref, reactive, h, onMounted, computed, watch } from 'vue'
 import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5'
+import { SearchOutline, RefreshOutline, AddOutline, SettingsOutline } from '@vicons/ionicons5'
 import { dictTypeApi, dictDataApi, type SysDictType, type SysDictData } from '@/api/org'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -164,26 +180,56 @@ const tableData = ref<SysDictType[]>([])
 const loading = ref(false)
 const pagination = reactive({ page: 1, pageSize: 10, itemCount: 0, showSizePicker: true, pageSizes: [10, 20, 50] })
 
-const columns: DataTableColumns<SysDictType> = [
-  { title: 'ID', key: 'id', width: 80 },
-  { title: '字典名称', key: 'dictName', width: 150 },
-  { title: '字典类型', key: 'dictType', width: 150 },
-  { title: '状态', key: 'status', width: 80, render(row) {
-    return h(NTag, { type: row.status === 1 ? 'success' : 'error', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' })
-  }},
-  { title: '备注', key: 'remark', width: 80, ellipsis: { tooltip: true } },
-  { title: '创建时间', key: 'createTime', width: 180 },
-  { title: '操作', key: 'actions', width: 220, fixed: 'right', render(row) {
-    const buttons = [h(NButton, { size: 'small', onClick: () => handleViewData(row) }, { default: () => '字典数据' })]
-    if (hasPermission('sys:dict:edit')) {
-      buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+const columnDefs: ColumnDefinition<SysDictType>[] = [
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
+  { key: 'dictName', title: '字典名称', column: { title: '字典名称', key: 'dictName', width: 150 } },
+  { key: 'dictType', title: '字典类型', column: { title: '字典类型', key: 'dictType', width: 150 } },
+  {
+    key: 'status',
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render(row) {
+        return h(NTag, { type: row.status === 1 ? 'success' : 'error', size: 'small' }, { default: () => row.status === 1 ? '启用' : '禁用' })
+      }
     }
-    if (hasPermission('sys:dict:delete')) {
-      buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+  },
+  { key: 'remark', title: '备注', column: { title: '备注', key: 'remark', width: 80, ellipsis: { tooltip: true } } },
+  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
+  {
+    key: 'actions',
+    title: '操作',
+    fixed: 'right',
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 220,
+      fixed: 'right',
+      render(row) {
+        const buttons = [h(NButton, { size: 'small', onClick: () => handleViewData(row) }, { default: () => '字典数据' })]
+        if (hasPermission('sys:dict:edit')) {
+          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+        }
+        if (hasPermission('sys:dict:delete')) {
+          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+        }
+        return h(NSpace, null, { default: () => buttons })
+      }
     }
-    return h(NSpace, null, { default: () => buttons })
-  }}
+  }
 ]
+
+const preference = useTablePreference<SysDictType>('system/dict', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 const modalVisible = ref(false)
 const modalTitle = ref('新增字典类型')
@@ -247,7 +293,22 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.dictName = ''; searchForm.dictType = ''; searchForm.status = null; handleSearch() }
 function handlePageChange(page: number) { pagination.page = page; loadData() }
-function handlePageSizeChange(pageSize: number) { pagination.pageSize = pageSize; pagination.page = 1; loadData() }
+async function handlePageSizeChange(pageSize: number) {
+  pagination.pageSize = pageSize
+  pagination.page = 1
+  await preference.savePageSize(pageSize)
+  loadData()
+}
+
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
+}
 
 function handleAdd() {
   modalTitle.value = '新增字典类型'
@@ -321,7 +382,11 @@ function handleDeleteData(row: SysDictData) {
   })
 }
 
-onMounted(() => loadData())
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
+  loadData()
+})
 </script>
 
 <style lang="scss" scoped>

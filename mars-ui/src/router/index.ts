@@ -116,6 +116,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/org/post/index.vue'),
         meta: { title: '岗位管理', icon: 'IdCardOutline' }
       },
+      {
+        path: 'org/structure',
+        name: 'OrgStructure',
+        component: () => import('@/views/org/structure/index.vue'),
+        meta: { title: '组织架构', icon: 'BusinessOutline' }
+      },
       // 系统日志
       {
         path: 'log/operlog',

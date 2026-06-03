@@ -28,14 +28,20 @@
       </div>
 
       <div class="table-toolbar">
-        <n-button v-if="hasPermission('sys:operlog:delete')" type="error" @click="handleClean">
-          <template #icon><n-icon><TrashOutline /></n-icon></template>
-          清空日志
-        </n-button>
+        <n-space justify="space-between" style="width: 100%">
+          <n-button v-if="hasPermission('sys:operlog:delete')" type="error" @click="handleClean">
+            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            清空日志
+          </n-button>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
+          </n-button>
+        </n-space>
       </div>
 
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysOperLog) => row.id"
@@ -45,7 +51,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="pagination.pageSize"
+          v-model:page-size="preference.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -88,15 +94,25 @@
         </n-descriptions-item>
       </n-descriptions>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed } from 'vue'
-import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
-import { SearchOutline, RefreshOutline, TrashOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { NButton, NTag, NSpace, NPagination, useMessage, useDialog } from 'naive-ui'
+import { SearchOutline, RefreshOutline, TrashOutline, SettingsOutline } from '@vicons/ionicons5'
 import { operLogApi, type SysOperLog } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -120,28 +136,76 @@ const detailData = ref<SysOperLog>({} as SysOperLog)
 
 const businessTypeMap: Record<number, string> = { 0: '其他', 1: '新增', 2: '修改', 3: '删除', 4: '查询', 5: '导出' }
 
-const columns: DataTableColumns<SysOperLog> = [
-  { title: 'ID', key: 'id', width: 80 },
-  { title: '模块名称', key: 'title', width: 120 },
-  { title: '业务类型', key: 'businessType', width: 100, render(row) {
-    return h('span', {}, businessTypeMap[row.businessType] || '其他')
-  }},
-  { title: '请求方式', key: 'requestMethod', width: 100 },
-  { title: '操作人员', key: 'operName', width: 100 },
-  { title: 'IP地址', key: 'operIp', width: 140 },
-  { title: '状态', key: 'status', width: 80, render(row) {
-    return h(NTag, { type: row.status === 0 ? 'success' : 'error', size: 'small' }, { default: () => row.status === 0 ? '正常' : '异常' })
-  }},
-  { title: '耗时', key: 'costTime', width: 80, render(row) { return h('span', {}, `${row.costTime}ms`) }},
-  { title: '操作时间', key: 'operTime', width: 180 },
-  { title: '操作', key: 'actions', width: 120, fixed: 'right', render(row) {
-    const buttons = [h(NButton, { size: 'small', onClick: () => handleDetail(row) }, { default: () => '详情' })]
-    if (hasPermission('sys:operlog:delete')) {
-      buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+const columnDefs: ColumnDefinition<SysOperLog>[] = [
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
+  { key: 'title', title: '模块名称', column: { title: '模块名称', key: 'title', width: 120 } },
+  {
+    key: 'businessType',
+    title: '业务类型',
+    column: {
+      title: '业务类型',
+      key: 'businessType',
+      width: 100,
+      render(row) {
+        return h('span', {}, businessTypeMap[row.businessType] || '其他')
+      }
     }
-    return h(NSpace, null, { default: () => buttons })
-  }}
+  },
+  { key: 'requestMethod', title: '请求方式', column: { title: '请求方式', key: 'requestMethod', width: 100 } },
+  { key: 'operName', title: '操作人员', column: { title: '操作人员', key: 'operName', width: 100 } },
+  { key: 'operIp', title: 'IP地址', column: { title: 'IP地址', key: 'operIp', width: 140 } },
+  {
+    key: 'status',
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render(row) {
+        return h(NTag, { type: row.status === 0 ? 'success' : 'error', size: 'small' }, { default: () => row.status === 0 ? '正常' : '异常' })
+      }
+    }
+  },
+  {
+    key: 'costTime',
+    title: '耗时',
+    column: {
+      title: '耗时',
+      key: 'costTime',
+      width: 80,
+      render(row) { return h('span', {}, `${row.costTime}ms`) }
+    }
+  },
+  { key: 'operTime', title: '操作时间', column: { title: '操作时间', key: 'operTime', width: 180 } },
+  {
+    key: 'actions',
+    title: '操作',
+    fixed: 'right',
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 120,
+      fixed: 'right',
+      render(row) {
+        const buttons = [h(NButton, { size: 'small', onClick: () => handleDetail(row) }, { default: () => '详情' })]
+        if (hasPermission('sys:operlog:delete')) {
+          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+        }
+        return h(NSpace, null, { default: () => buttons })
+      }
+    }
+  }
 ]
+
+const preference = useTablePreference<SysOperLog>('log/operlog', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 async function loadData() {
   loading.value = true
@@ -155,7 +219,22 @@ async function loadData() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.title = ''; searchForm.operName = ''; searchForm.status = null; handleSearch() }
 function handlePageChange(page: number) { pagination.page = page; loadData() }
-function handlePageSizeChange(pageSize: number) { pagination.pageSize = pageSize; pagination.page = 1; loadData() }
+async function handlePageSizeChange(pageSize: number) {
+  pagination.pageSize = pageSize
+  pagination.page = 1
+  await preference.savePageSize(pageSize)
+  loadData()
+}
+
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
+}
 
 function handleDetail(row: SysOperLog) {
   detailData.value = row
@@ -188,7 +267,11 @@ function handleClean() {
   })
 }
 
-onMounted(() => loadData())
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
+  loadData()
+})
 </script>
 
 <style scoped>

@@ -27,29 +27,48 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space>
-          <n-button type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增
-          </n-button>
-          <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-            <template #icon><n-icon><TrashOutline /></n-icon></template>
-            删除
+        <n-space justify="space-between" style="width: 100%">
+          <n-space>
+            <n-button type="primary" @click="handleAdd">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新增
+            </n-button>
+            <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              删除
+            </n-button>
+          </n-space>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
           </n-button>
         </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
-        :pagination="pagination"
         :row-key="(row) => row.id"
-        @update:page="handlePageChange"
-        @update:page-size="handlePageSizeChange"
         @update:checked-row-keys="handleCheck"
       />
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px">
+        <n-pagination
+          v-model:page="pagination.page"
+          v-model:page-size="preference.pageSize"
+          :item-count="pagination.itemCount"
+          :page-sizes="[10, 20, 50, 100]"
+          show-size-picker
+          show-quick-jumper
+          @update:page="handlePageChange"
+          @update:page-size="handlePageSizeChange"
+        >
+          <template #prefix>
+            共 {{ pagination.itemCount }} 条
+          </template>
+        </n-pagination>
+      </div>
     </n-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -75,17 +94,31 @@
         </n-space>
       </template>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted } from 'vue'
-import { NButton, NSpace, NIcon, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, TrashOutline, CreateOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { NButton, NSpace, NIcon, NPagination, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline, TrashOutline, CreateOutline, SettingsOutline } from '@vicons/ionicons5'
 import { customerApi, type Customer } from '@/api/customer'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
+import { useUserStore } from '@/stores/user'
 
 const message = useMessage()
 const dialog = useDialog()
+const userStore = useUserStore()
+
+const hasPermission = (permission: string) => userStore.hasPermission(permission)
 
 // 搜索表单
 const searchForm = reactive({
@@ -122,35 +155,51 @@ const formRules = {
   phone: { required: true, message: '请输入手机号', trigger: 'blur' },
 }
 
-// 表格列
-const columns: DataTableColumns<Customer> = [
-  { type: 'selection' },
-  { title: '客户ID', key: 'id' },
-  { title: '客户姓名', key: 'name' },
-  { title: '手机号', key: 'phone' },
-  { title: '身份证号', key: 'idCard' },
-  { title: '地址', key: 'address' },
-  { title: '备注', key: 'remark' },
-  { title: '创建时间', key: 'createTime', width: 180 },
-  { title: '更新时间', key: 'updateTime', width: 180 },
+// 表格列定义
+const columnDefs: ColumnDefinition<Customer>[] = [
+  { key: 'selection', title: '选择', column: { type: 'selection' } },
+  { key: 'id', title: '客户ID', column: { title: '客户ID', key: 'id' } },
+  { key: 'name', title: '客户姓名', column: { title: '客户姓名', key: 'name' } },
+  { key: 'phone', title: '手机号', column: { title: '手机号', key: 'phone' } },
+  { key: 'idCard', title: '身份证号', column: { title: '身份证号', key: 'idCard' } },
+  { key: 'address', title: '地址', column: { title: '地址', key: 'address' } },
+  { key: 'remark', title: '备注', column: { title: '备注', key: 'remark' } },
+  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
+  { key: 'updateTime', title: '更新时间', column: { title: '更新时间', key: 'updateTime', width: 180 } },
   {
-    title: '操作',
     key: 'actions',
-    width: 150,
-    render(row) {
-      return h(NSpace, null, {
-        default: () => [
-          h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
-            default: () => [h(NIcon, null, { default: () => h(CreateOutline) }), ' 编辑']
-          }),
-          h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
-            default: () => [h(NIcon, null, { default: () => h(TrashOutline) }), ' 删除']
-          })
-        ]
-      })
+    title: '操作',
+    fixed: 'right',
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 150,
+      fixed: 'right',
+      render(row) {
+        return h(NSpace, null, {
+          default: () => [
+            h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
+              default: () => [h(NIcon, null, { default: () => h(CreateOutline) }), ' 编辑']
+            }),
+            h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
+              default: () => [h(NIcon, null, { default: () => h(TrashOutline) }), ' 删除']
+            })
+          ]
+        })
+      }
     }
   }
 ]
+
+const preference = useTablePreference<Customer>('system/customer', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 // 加载数据
 async function loadData() {
@@ -190,10 +239,22 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
+  await preference.savePageSize(pageSize)
   loadData()
+}
+
+// 列设置处理
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
 }
 
 // 选择
@@ -274,7 +335,9 @@ function handleBatchDelete() {
   })
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadData()
 })
 </script>

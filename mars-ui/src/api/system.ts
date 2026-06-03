@@ -486,6 +486,44 @@ export const tempUserApi = {
   }
 }
 
+// ==================== 用户表格偏好设置 ====================
+export interface TablePreferenceConfig {
+  columnsConfig?: string
+  pageSize?: number
+}
+
+export interface TableColumnConfig {
+  key: string
+  visible: boolean
+  width?: number
+}
+
+export const tablePreferenceApi = {
+  getPreference(pageKey: string): Promise<TablePreferenceConfig> {
+    return request({ url: `/sys/table-preference/${pageKey}`, method: 'get' })
+  },
+
+  savePreference(pageKey: string, data: TablePreferenceConfig): Promise<void> {
+    return request({ url: `/sys/table-preference/${pageKey}`, method: 'post', data })
+  },
+
+  saveColumnsConfig(pageKey: string, columnsConfig: string): Promise<void> {
+    return request({ url: `/sys/table-preference/${pageKey}/columns`, method: 'post', data: { columnsConfig } })
+  },
+
+  savePageSize(pageKey: string, pageSize: number): Promise<void> {
+    return request({ url: `/sys/table-preference/${pageKey}/page-size`, method: 'post', data: { pageSize } })
+  },
+
+  resetPreference(pageKey: string): Promise<void> {
+    return request({ url: `/sys/table-preference/${pageKey}`, method: 'delete' })
+  },
+
+  resetAllPreferences(): Promise<void> {
+    return request({ url: '/sys/table-preference/all', method: 'delete' })
+  }
+}
+
 // ==================== 文件配置管理 ====================
 export const fileConfigApi = {
   page(params: { page: number; pageSize: number; name?: string; storageType?: string }): Promise<PageResult<SysFileConfig>> {

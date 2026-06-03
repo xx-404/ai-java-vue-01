@@ -33,22 +33,45 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-button v-if="hasPermission('sys:role:add')" type="primary" @click="handleAdd">
-          <template #icon><n-icon><AddOutline /></n-icon></template>
-          新增角色
-        </n-button>
+        <n-space justify="space-between" style="width: 100%">
+          <n-space>
+            <n-button v-if="hasPermission('sys:role:add')" type="primary" @click="handleAdd">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新增角色
+            </n-button>
+          </n-space>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
+          </n-button>
+        </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
-        :pagination="pagination"
         :row-key="(row: SysRole) => row.id"
         @update:page="handlePageChange"
-        @update:page-size="handlePageSizeChange"
       />
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px">
+        <n-pagination
+          v-model:page="pagination.page"
+          v-model:page-size="preference.pageSize"
+          :item-count="pagination.itemCount"
+          :page-sizes="[10, 20, 50, 100]"
+          show-size-picker
+          show-quick-jumper
+          @update:page="handlePageChange"
+          @update:page-size="handlePageSizeChange"
+        >
+          <template #prefix>
+            共 {{ pagination.itemCount }} 条
+          </template>
+        </n-pagination>
+      </div>
     </n-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -277,15 +300,26 @@
         </n-space>
       </template>
     </n-modal>
+
+    <!-- 列设置弹窗 -->
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted } from 'vue'
-import { NButton, NTag, NSpace, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeOption, NIcon, NAlert, NDivider } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, GitCompareOutline, DocumentTextOutline, AddCircleOutline, ArrowForwardOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeOption, NIcon, NAlert, NDivider } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline, SettingsOutline, GitCompareOutline, DocumentTextOutline, AddCircleOutline, ArrowForwardOutline } from '@vicons/ionicons5'
 import { roleApi, menuApi, deptApi, type SysRole, type SysMenu, type SysDept } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -321,9 +355,7 @@ const loading = ref(false)
 const pagination = reactive({
   page: 1,
   pageSize: 10,
-  itemCount: 0,
-  showSizePicker: true,
-  pageSizes: [10, 20, 50]
+  itemCount: 0
 })
 
 // 菜单树
@@ -335,45 +367,60 @@ const deptTreeData = ref<TreeOption[]>([])
 const deptIds = ref<number[]>([])
 
 // 表格列
-const columns: DataTableColumns<SysRole> = [
-  { title: 'ID', key: 'id', width: 80 },
-  { title: '角色名称', key: 'name', width: 150 },
-  { title: '角色编码', key: 'code', width: 150 },
-  { title: '排序', key: 'sort', width: 80 },
+const columnDefs: ColumnDefinition<SysRole>[] = [
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
+  { key: 'name', title: '角色名称', column: { title: '角色名称', key: 'name', width: 150 } },
+  { key: 'code', title: '角色编码', column: { title: '角色编码', key: 'code', width: 150 } },
+  { key: 'sort', title: '排序', column: { title: '排序', key: 'sort', width: 80 } },
   {
-    title: '状态',
     key: 'status',
-    width: 80,
-    render(row) {
-      return h(
-        NTag,
-        { type: row.status === 1 ? 'success' : 'error', size: 'small' },
-        { default: () => (row.status === 1 ? '启用' : '禁用') }
-      )
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render(row) {
+        return h(NTag, { type: row.status === 1 ? 'success' : 'error', size: 'small' }, { default: () => (row.status === 1 ? '启用' : '禁用') })
+      }
     }
   },
-  { title: '备注', key: 'remark',width: 180, ellipsis: { tooltip: true } },
-  { title: '创建时间', key: 'createTime', width: 180 },
+  { key: 'remark', title: '备注', column: { title: '备注', key: 'remark', width: 180, ellipsis: { tooltip: true } } },
+  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
   {
-    title: '操作',
     key: 'actions',
-    width: 220,
+    title: '操作',
     fixed: 'right',
-    render(row) {
-      const buttons = []
-      if (hasPermission('sys:role:edit')) {
-        buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 220,
+      fixed: 'right',
+      render(row) {
+        const buttons = []
+        if (hasPermission('sys:role:edit')) {
+          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+        }
+        if (hasPermission('sys:role:copy')) {
+          buttons.push(h(NButton, { size: 'small', type: 'info', onClick: () => handleCopy(row) }, { default: () => '复制' }))
+        }
+        if (hasPermission('sys:role:delete')) {
+          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+        }
+        return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
       }
-      if (hasPermission('sys:role:copy')) {
-        buttons.push(h(NButton, { size: 'small', type: 'info', onClick: () => handleCopy(row) }, { default: () => '复制' }))
-      }
-      if (hasPermission('sys:role:delete')) {
-        buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
-      }
-      return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
     }
   }
 ]
+
+const preference = useTablePreference<SysRole>('system/role', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 // 弹窗
 const modalVisible = ref(false)
@@ -504,10 +551,22 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
+  await preference.savePageSize(pageSize)
   loadData()
+}
+
+// 列设置处理
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
 }
 
 // 菜单选择 - 同时记录半选的父节点
@@ -717,7 +776,9 @@ async function handleCopySubmit() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadData()
   loadMenuTree()
   loadDeptTree()

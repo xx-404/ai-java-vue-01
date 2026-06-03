@@ -13,6 +13,10 @@ import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 
+import com.mars.admin.websocket.MessageWebSocketHandler;
+import com.mars.system.entity.SysAlertRecord;
+import com.mars.system.service.SysAlertRecordService;
+
 import java.io.ByteArrayInputStream;
 import java.io.ObjectInputStream;
 import java.lang.management.*;
@@ -31,6 +35,8 @@ import java.util.*;
 public class MonitorController {
 
     private final StringRedisTemplate redisTemplate;
+    private final SysAlertRecordService alertRecordService;
+    private final MessageWebSocketHandler webSocketHandler;
 
     /**
      * 获取在线用户列表
@@ -295,6 +301,28 @@ public class MonitorController {
             disks.add(disk);
         }
         result.put("disks", disks);
+
+        try {
+            List<SysAlertRecord> newAlerts = alertRecordService.checkAndAlert(result);
+            for (SysAlertRecord alert : newAlerts) {
+                String typeName = switch (alert.getAlertType()) {
+                    case "cpu" -> "CPU";
+                    case "memory" -> "内存";
+                    case "disk" -> "磁盘";
+                    default -> alert.getAlertType();
+                };
+                String content = String.format("%s使用率 %.1f%% 超过阈值 %.1f%%",
+                        typeName, alert.getCurrentValue().doubleValue(), alert.getThreshold().doubleValue());
+                webSocketHandler.sendNotice(null, "服务器告警 - " + typeName, content);
+            }
+
+            List<SysAlertRecord> activeAlerts = alertRecordService.activeList();
+            result.put("activeAlerts", activeAlerts);
+            result.put("alertCount", activeAlerts.size());
+        } catch (Exception e) {
+            result.put("activeAlerts", Collections.emptyList());
+            result.put("alertCount", 0);
+        }
 
         return Result.ok(result);
     }

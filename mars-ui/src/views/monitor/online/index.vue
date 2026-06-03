@@ -2,23 +2,39 @@
   <div class="page-container">
     <n-card class="page-layout">
       <div class="table-toolbar">
-        <n-button @click="loadData">
-          <template #icon><n-icon><RefreshOutline /></n-icon></template>
-          刷新
-        </n-button>
+        <n-space justify="space-between" style="width: 100%">
+          <n-button @click="loadData">
+            <template #icon><n-icon><RefreshOutline /></n-icon></template>
+            刷新
+          </n-button>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
+          </n-button>
+        </n-space>
       </div>
 
-      <n-data-table :columns="columns" :data="tableData" :loading="loading" :row-key="(row: OnlineUser) => row.tokenId" />
+      <n-data-table :columns="tableColumns" :data="tableData" :loading="loading" :row-key="(row: OnlineUser) => row.tokenId" />
     </n-card>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, h, onMounted } from 'vue'
+import { ref, h, onMounted, watch, computed } from 'vue'
 import { NButton, NSpace, NTag, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
-import { RefreshOutline } from '@vicons/ionicons5'
+import { RefreshOutline, SettingsOutline } from '@vicons/ionicons5'
 import { onlineApi, type OnlineUser } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -28,25 +44,49 @@ const hasPermission = (permission: string) => userStore.hasPermission(permission
 const tableData = ref<OnlineUser[]>([])
 const loading = ref(false)
 
-const columns: DataTableColumns<OnlineUser> = [
-  { title: '序号', key: 'index', width: 60, render: (_row, index) => index + 1 },
-  { title: '会话编号', key: 'tokenId', ellipsis: { tooltip: true }, minWidth: 180 },
-  { title: '登录名称', key: 'loginName', width: 100 },
-  { title: '主机', key: 'ipaddr', width: 130 },
-  { title: '登录地点', key: 'loginLocation', width: 140 },
-  { title: '浏览器', key: 'browser', width: 120 },
-  { title: '操作系统', key: 'os', width: 120 },
-  { title: '会话状态', key: 'status', width: 100, render(row) {
-    return h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '在线' : '离线' })
-  }},
-  { title: '登录时间', key: 'loginTime', width: 180 },
-  { title: '最后访问时间', key: 'lastAccessTime', width: 180 },
-  { title: '操作', key: 'actions', width: 100, fixed: 'right', render(row) {
-    return hasPermission('monitor:online:forceLogout')
-      ? h(NButton, { size: 'small', type: 'error', onClick: () => handleForceLogout(row) }, { default: () => '强退' })
-      : '-'
-  }}
+const columnDefs: ColumnDefinition<OnlineUser>[] = [
+  { key: 'index', title: '序号', column: { title: '序号', key: 'index', width: 60, render: (_row, index) => index + 1 } },
+  { key: 'tokenId', title: '会话编号', column: { title: '会话编号', key: 'tokenId', ellipsis: { tooltip: true }, minWidth: 180 } },
+  { key: 'loginName', title: '登录名称', column: { title: '登录名称', key: 'loginName', width: 100 } },
+  { key: 'ipaddr', title: '主机', column: { title: '主机', key: 'ipaddr', width: 130 } },
+  { key: 'loginLocation', title: '登录地点', column: { title: '登录地点', key: 'loginLocation', width: 140 } },
+  { key: 'browser', title: '浏览器', column: { title: '浏览器', key: 'browser', width: 120 } },
+  { key: 'os', title: '操作系统', column: { title: '操作系统', key: 'os', width: 120 } },
+  {
+    key: 'status',
+    title: '会话状态',
+    column: {
+      title: '会话状态',
+      key: 'status',
+      width: 100,
+      render(row) {
+        return h(NTag, { type: row.status === 1 ? 'success' : 'default', size: 'small' }, { default: () => row.status === 1 ? '在线' : '离线' })
+      }
+    }
+  },
+  { key: 'loginTime', title: '登录时间', column: { title: '登录时间', key: 'loginTime', width: 180 } },
+  { key: 'lastAccessTime', title: '最后访问时间', column: { title: '最后访问时间', key: 'lastAccessTime', width: 180 } },
+  {
+    key: 'actions',
+    title: '操作',
+    fixed: 'right',
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 100,
+      fixed: 'right',
+      render(row) {
+        return hasPermission('monitor:online:forceLogout')
+          ? h(NButton, { size: 'small', type: 'error', onClick: () => handleForceLogout(row) }, { default: () => '强退' })
+          : '-'
+      }
+    }
+  }
 ]
+
+const preference = useTablePreference<OnlineUser>('monitor/online', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
 
 async function loadData() {
   loading.value = true
@@ -71,7 +111,20 @@ function handleForceLogout(row: OnlineUser) {
   })
 }
 
-onMounted(() => loadData())
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
+}
+
+onMounted(async () => {
+  await preference.init()
+  loadData()
+})
 </script>
 <style lang="scss" scoped>
 .page-layout{

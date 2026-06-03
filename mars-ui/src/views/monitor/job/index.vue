@@ -64,20 +64,26 @@
       </div>
 
       <div class="table-toolbar">
-        <n-space>
-          <n-button v-if="hasPermission('monitor:job:add')" type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增任务
-          </n-button>
-          <n-button @click="handleShowAllLogs">
-            <template #icon><n-icon><ListOutline /></n-icon></template>
-            调度日志
+        <n-space justify="space-between" style="width: 100%">
+          <n-space>
+            <n-button v-if="hasPermission('monitor:job:add')" type="primary" @click="handleAdd">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新增任务
+            </n-button>
+            <n-button @click="handleShowAllLogs">
+              <template #icon><n-icon><ListOutline /></n-icon></template>
+              调度日志
+            </n-button>
+          </n-space>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
           </n-button>
         </n-space>
       </div>
 
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysJob) => row.id"
@@ -87,7 +93,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="pagination.pageSize"
+          v-model:page-size="preference.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -179,13 +185,23 @@
         </n-pagination>
       </div>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, h, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { NButton, NTag, NSpace, NSwitch, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, ListOutline } from '@vicons/ionicons5'
+import { SearchOutline, RefreshOutline, AddOutline, ListOutline, SettingsOutline } from '@vicons/ionicons5'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 import { jobApi, type SysJob, type SysJobLog } from '@/api/monitor'
 import { useUserStore } from '@/stores/user'
 
@@ -227,29 +243,59 @@ let pieChart: any = null
 let barChart: any = null
 const pagination = reactive({ page: 1, pageSize: 10, itemCount: 0, showSizePicker: true, pageSizes: [10, 20, 50] })
 
-const columns: DataTableColumns<SysJob> = [
-  { title: 'ID', key: 'id', width: 80 },
-  { title: '任务名称', key: 'jobName', width: 150 },
-  { title: '任务组名', key: 'jobGroup', width: 100 },
-  { title: '调用目标', key: 'invokeTarget', ellipsis: { tooltip: true } },
-  { title: 'cron表达式', key: 'cronExpression', width: 150 },
-  { title: '状态', key: 'status', width: 100, render(row) {
-    return h(NSwitch, { value: row.status === 1, size: 'small', onChange: (val: boolean) => handleChangeStatus(row, val ? 1 : 0) },
-      { checked: () => '正常', unchecked: () => '暂停' })
-  }},
-  { title: '操作', key: 'actions', width: 280, fixed: 'right', render(row) {
-    const buttons = []
-    buttons.push(h(NButton, { size: 'small',  onClick: () => handleShowLog(row) }, { default: () => '调度日志' }))
-    if (hasPermission('monitor:job:edit')) {
-      buttons.push(h(NButton, { size: 'small', onClick: () => handleRun(row) }, { default: () => '执行' }))
-      buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+const columnDefs: ColumnDefinition<SysJob>[] = [
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
+  { key: 'jobName', title: '任务名称', column: { title: '任务名称', key: 'jobName', width: 150 } },
+  { key: 'jobGroup', title: '任务组名', column: { title: '任务组名', key: 'jobGroup', width: 100 } },
+  { key: 'invokeTarget', title: '调用目标', column: { title: '调用目标', key: 'invokeTarget', ellipsis: { tooltip: true } } },
+  { key: 'cronExpression', title: 'cron表达式', column: { title: 'cron表达式', key: 'cronExpression', width: 150 } },
+  {
+    key: 'status',
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render(row) {
+        return h(NSwitch, { value: row.status === 1, size: 'small', onChange: (val: boolean) => handleChangeStatus(row, val ? 1 : 0) },
+          { checked: () => '正常', unchecked: () => '暂停' })
+      }
     }
-    if (hasPermission('monitor:job:delete')) {
-      buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+  },
+  {
+    key: 'actions',
+    title: '操作',
+    fixed: 'right',
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 280,
+      fixed: 'right',
+      render(row) {
+        const buttons = []
+        buttons.push(h(NButton, { size: 'small', onClick: () => handleShowLog(row) }, { default: () => '调度日志' }))
+        if (hasPermission('monitor:job:edit')) {
+          buttons.push(h(NButton, { size: 'small', onClick: () => handleRun(row) }, { default: () => '执行' }))
+          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+        }
+        if (hasPermission('monitor:job:delete')) {
+          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+        }
+        return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
+      }
     }
-    return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
-  }}
+  }
 ]
+
+const preference = useTablePreference<SysJob>('monitor/job', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 const cronPresetSelect = ref<string | null>(null)
 const modalVisible = ref(false)
@@ -384,7 +430,12 @@ function handleShowAllLogs() {
 function handleSearch() { pagination.page = 1; loadData() }
 function handleReset() { searchForm.jobName = ''; searchForm.jobGroup = ''; searchForm.status = null; handleSearch() }
 function handlePageChange(page: number) { pagination.page = page; loadData() }
-function handlePageSizeChange(pageSize: number) { pagination.pageSize = pageSize; pagination.page = 1; loadData() }
+async function handlePageSizeChange(pageSize: number) {
+  pagination.pageSize = pageSize
+  pagination.page = 1
+  await preference.savePageSize(pageSize)
+  loadData()
+}
 function handleLogPageChange(page: number) { logPagination.page = page; loadLogData() }
 function handleLogPageSizeChange(pageSize: number) {
   logPagination.pageSize = pageSize
@@ -436,7 +487,19 @@ async function handleRun(row: SysJob) {
   message.success('执行成功')
 }
 
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
+}
+
 onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadData()
   await nextTick()
   loadStats()

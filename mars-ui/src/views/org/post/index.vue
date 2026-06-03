@@ -52,13 +52,17 @@
               <n-button v-if="selectedPostId && hasPermission('sys:post:delete')" type="error" size="small" @click="handleDeletePost">
                 删除岗位
               </n-button>
+              <n-button size="small" @click="columnSettingVisible = true">
+                <template #icon><n-icon><SettingsOutline /></n-icon></template>
+                列设置
+              </n-button>
             </n-space>
           </div>
         </template>
 
         <!-- 用户表格 -->
         <n-data-table
-          :columns="userColumns"
+          :columns="tableColumns"
           :data="userData"
           :loading="userLoading"
           :row-key="(row: SysUser) => row.id"
@@ -68,7 +72,7 @@
         <div style="display: flex; justify-content: flex-end; margin-top: 12px">
           <n-pagination
             v-model:page="pagination.page"
-            v-model:page-size="pagination.pageSize"
+            v-model:page-size="preference.pageSize"
             :item-count="pagination.itemCount"
             :page-sizes="pagination.pageSizes"
             show-size-picker
@@ -119,15 +123,25 @@
         </n-space>
       </template>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed, type HTMLAttributes } from 'vue'
-import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeOption, type TreeDropInfo } from 'naive-ui'
-import { SearchOutline, AddOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted, computed, watch, type HTMLAttributes } from 'vue'
+import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type FormInst, type FormRules, type TreeOption, type TreeDropInfo, NIcon } from 'naive-ui'
+import { SearchOutline, AddOutline, SettingsOutline } from '@vicons/ionicons5'
 import { postApi, userApi, type SysUser, type SysPost } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -206,59 +220,75 @@ const pagination = reactive({
   pageSizes: [10, 20, 50]
 })
 
-const userColumns: DataTableColumns<SysUser> = [
-  { title: 'ID', key: 'id', width: 60 },
-  { title: '用户名', key: 'username', width: 100 },
-  { title: '昵称', key: 'nickname', width: 100 },
-  { title: '部门', key: 'deptName', width: 100, render(row) {
-    return row.deptName || '-'
-  }},
-  { title: '岗位', key: 'postNames', width: 150, render(row) {
-    return row.postNames || '-'
-  }},
+const columnDefs: ColumnDefinition<SysUser>[] = [
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 60 } },
+  { key: 'username', title: '用户名', column: { title: '用户名', key: 'username', width: 100 } },
+  { key: 'nickname', title: '昵称', column: { title: '昵称', key: 'nickname', width: 100 } },
+  { key: 'deptName', title: '部门', column: { title: '部门', key: 'deptName', width: 100, render(row) { return row.deptName || '-' } } },
+  { key: 'postNames', title: '岗位', column: { title: '岗位', key: 'postNames', width: 150, render(row) { return row.postNames || '-' } } },
   {
-    title: '用户类型',
     key: 'userType',
-    width: 110,
-    render(row) {
-      const typeMap: Record<string, { type: 'info' | 'success' | 'warning'; label: string }> = {
-        admin: { type: 'info', label: '后台管理员' },
-        pc: { type: 'success', label: 'PC前台' },
-        app: { type: 'warning', label: 'App/小程序' }
+    title: '用户类型',
+    column: {
+      title: '用户类型',
+      key: 'userType',
+      width: 110,
+      render(row) {
+        const typeMap: Record<string, { type: 'info' | 'success' | 'warning'; label: string }> = {
+          admin: { type: 'info', label: '后台管理员' },
+          pc: { type: 'success', label: 'PC前台' },
+          app: { type: 'warning', label: 'App/小程序' }
+        }
+        const t = typeMap[row.userType || 'admin'] || { type: 'info', label: row.userType || '未知' }
+        return h(NTag, { type: t.type, size: 'small' }, { default: () => t.label })
       }
-      const t = typeMap[row.userType || 'admin'] || { type: 'info', label: row.userType || '未知' }
-      return h(NTag, { type: t.type, size: 'small' }, { default: () => t.label })
     }
   },
-  { title: '手机号', key: 'phone', width: 120 , render(row) {
-      return row.phone || '-'
-    }},
+  { key: 'phone', title: '手机号', column: { title: '手机号', key: 'phone', width: 120, render(row) { return row.phone || '-' } } },
   {
-    title: '离职',
     key: 'isQuit',
-    width: 80,
-    render(row) {
-      const quit = row.isQuit === 1
-      return h(NTag, { type: quit ? 'error' : 'success', size: 'small' }, { default: () => (quit ? '是' : '否') })
+    title: '离职',
+    column: {
+      title: '离职',
+      key: 'isQuit',
+      width: 80,
+      render(row) {
+        const quit = row.isQuit === 1
+        return h(NTag, { type: quit ? 'error' : 'success', size: 'small' }, { default: () => (quit ? '是' : '否') })
+      }
     }
   },
   {
-    title: '状态',
     key: 'status',
-    width: 80,
-    render(row) {
-      const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
-        0: { type: 'error', label: '禁用' },
-        1: { type: 'success', label: '启用' },
-        2: { type: 'warning', label: '待审核' },
-        3: { type: 'error', label: '审核拒绝' }
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render(row) {
+        const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
+          0: { type: 'error', label: '禁用' },
+          1: { type: 'success', label: '启用' },
+          2: { type: 'warning', label: '待审核' },
+          3: { type: 'error', label: '审核拒绝' }
+        }
+        const status = statusMap[row.status] || { type: 'info', label: '未知' }
+        return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
       }
-      const status = statusMap[row.status] || { type: 'info', label: '未知' }
-      return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
     }
   },
-  { title: '创建时间', key: 'createTime', width: 170 }
+  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 170 } }
 ]
+
+const preference = useTablePreference<SysUser>('org/post', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 async function loadUserData() {
   userLoading.value = true
@@ -282,9 +312,20 @@ function handlePageChange(page: number) {
   loadUserData()
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
+  await preference.savePageSize(pageSize)
   handlePageChange(1)
+}
+
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
 }
 
 // ==================== 岗位维护逻辑 ====================
@@ -359,7 +400,9 @@ async function handleSubmit() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadPostTree()
   loadUserData()
 })

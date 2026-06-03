@@ -35,24 +35,30 @@
       </div>
 
       <div class="table-toolbar">
-        <n-space>
-          <n-button v-if="hasPermission('sys:tempUser:add')" type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增临时账号
-          </n-button>
-          <n-button 
-            v-if="hasPermission('sys:tempUser:delete') && checkedRowKeys.length > 0" 
-            type="error" 
-            @click="handleBatchDelete"
-          >
-            <template #icon><n-icon><TrashOutline /></n-icon></template>
-            批量删除({{ checkedRowKeys.length }})
+        <n-space justify="space-between" style="width: 100%">
+          <n-space>
+            <n-button v-if="hasPermission('sys:tempUser:add')" type="primary" @click="handleAdd">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新增临时账号
+            </n-button>
+            <n-button 
+              v-if="hasPermission('sys:tempUser:delete') && checkedRowKeys.length > 0" 
+              type="error" 
+              @click="handleBatchDelete"
+            >
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              批量删除({{ checkedRowKeys.length }})
+            </n-button>
+          </n-space>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
           </n-button>
         </n-space>
       </div>
 
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysUser) => row.id"
@@ -63,7 +69,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="pagination.pageSize"
+          v-model:page-size="preference.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -170,15 +176,25 @@
         </n-space>
       </template>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, h, onMounted, computed, watch } from 'vue'
-import { NButton, NTag, NSpace, NDropdown, NPagination, NGrid, NGi, NTransfer, NDatePicker, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TransferOption } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, ChevronDownOutline, DownloadOutline, TrashOutline, TimerOutline } from '@vicons/ionicons5'
+import { NButton, NTag, NSpace, NDropdown, NPagination, NGrid, NGi, NTransfer, NDatePicker, useMessage, useDialog, type FormInst, type FormRules, type TransferOption } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline, ChevronDownOutline, DownloadOutline, TrashOutline, TimerOutline, SettingsOutline } from '@vicons/ionicons5'
 import { tempUserApi, menuApi, type SysUser, type SysMenu } from '@/api/system'
 import { useUserStore } from '@/stores/user'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -207,73 +223,96 @@ const pagination = reactive({
 const menuOptions = ref<TransferOption[]>([])
 const menuIds = ref<number[]>([])
 
-const columns: DataTableColumns<SysUser> = [
-  { type: 'selection' },
-  { title: 'ID', key: 'id', width: 60 },
-  { title: '用户名', key: 'username', width: 120 },
-  { title: '昵称', key: 'nickname', width: 120 },
-  { title: '邮箱', key: 'email', width: 150, render(row) { return row.email || '-' } },
-  { title: '手机号', key: 'phone', width: 120, render(row) { return row.phone || '-' } },
+const columnDefs: ColumnDefinition<SysUser>[] = [
+  { key: 'selection', title: '选择', column: { type: 'selection' } },
+  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 60 } },
+  { key: 'username', title: '用户名', column: { title: '用户名', key: 'username', width: 120 } },
+  { key: 'nickname', title: '昵称', column: { title: '昵称', key: 'nickname', width: 120 } },
+  { key: 'email', title: '邮箱', column: { title: '邮箱', key: 'email', width: 150, render(row) { return row.email || '-' } } },
+  { key: 'phone', title: '手机号', column: { title: '手机号', key: 'phone', width: 120, render(row) { return row.phone || '-' } } },
   {
-    title: '剩余天数',
     key: 'remainingDays',
-    width: 100,
-    render(row) {
-      if (row.remainingDays === undefined || row.remainingDays === null) {
-        return '-'
-      }
-      const type = row.willExpire ? 'error' : row.remainingDays > 7 ? 'success' : 'warning'
-      return h(NTag, { type, size: 'small' }, { default: () => {
-        if (row.remainingDays <= 0) {
-          return '已过期'
+    title: '剩余天数',
+    column: {
+      title: '剩余天数',
+      key: 'remainingDays',
+      width: 100,
+      render(row) {
+        if (row.remainingDays === undefined || row.remainingDays === null) {
+          return '-'
         }
-        return `${row.remainingDays}天`
-      }})
+        const type = row.willExpire ? 'error' : row.remainingDays > 7 ? 'success' : 'warning'
+        return h(NTag, { type, size: 'small' }, { default: () => {
+          if (row.remainingDays <= 0) {
+            return '已过期'
+          }
+          return `${row.remainingDays}天`
+        }})
+      }
     }
   },
   {
-    title: '失效时间',
     key: 'expireTime',
-    width: 180,
-    render(row) {
-      return row.expireTime || '-'
+    title: '失效时间',
+    column: {
+      title: '失效时间',
+      key: 'expireTime',
+      width: 180,
+      render(row) {
+        return row.expireTime || '-'
+      }
     }
   },
   {
-    title: '状态',
     key: 'status',
-    width: 80,
-    render(row) {
-      const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
-        0: { type: 'error', label: '禁用' },
-        1: { type: 'success', label: '启用' }
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      width: 80,
+      render(row) {
+        const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
+          0: { type: 'error', label: '禁用' },
+          1: { type: 'success', label: '启用' }
+        }
+        const status = statusMap[row.status] || { type: 'info', label: '未知' }
+        return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
       }
-      const status = statusMap[row.status] || { type: 'info', label: '未知' }
-      return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
     }
   },
-  { title: '创建时间', key: 'createTime', width: 170 },
+  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 170 } },
   {
-    title: '操作',
     key: 'actions',
-    width: 180,
+    title: '操作',
     fixed: 'right',
-    render(row) {
-      const buttons = []
-      if (hasPermission('sys:tempUser:edit')) {
-        buttons.push(
-          h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' })
-        )
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 180,
+      fixed: 'right',
+      render(row) {
+        const buttons = []
+        if (hasPermission('sys:tempUser:edit')) {
+          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+        }
+        if (hasPermission('sys:tempUser:delete')) {
+          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+        }
+        return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
       }
-      if (hasPermission('sys:tempUser:delete')) {
-        buttons.push(
-          h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' })
-        )
-      }
-      return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
     }
   }
 ]
+
+const preference = useTablePreference<SysUser>('system/tempUser', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 const modalVisible = ref(false)
 const modalTitle = ref('新增临时账号')
@@ -355,9 +394,10 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
+  await preference.savePageSize(pageSize)
   loadData()
 }
 
@@ -471,7 +511,19 @@ async function handleCheckExpired() {
   }
 }
 
-onMounted(() => {
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
+}
+
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadData()
   loadMenuOptions()
 })

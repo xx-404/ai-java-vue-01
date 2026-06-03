@@ -30,38 +30,57 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space>
-          <n-button type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增
-          </n-button>
-          <n-button @click="importModalVisible = true">
-            <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
-            导入
-          </n-button>
-          <n-button @click="handleExport">
-            <template #icon><n-icon><DownloadOutline /></n-icon></template>
-            导出{{ selectedIds.length > 0 ? `(${selectedIds.length})` : '' }}
-          </n-button>
-          <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-            <template #icon><n-icon><TrashOutline /></n-icon></template>
-            删除
+        <n-space justify="space-between" style="width: 100%">
+          <n-space>
+            <n-button type="primary" @click="handleAdd">
+              <template #icon><n-icon><AddOutline /></n-icon></template>
+              新增
+            </n-button>
+            <n-button @click="importModalVisible = true">
+              <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
+              导入
+            </n-button>
+            <n-button @click="handleExport">
+              <template #icon><n-icon><DownloadOutline /></n-icon></template>
+              导出{{ selectedIds.length > 0 ? `(${selectedIds.length})` : '' }}
+            </n-button>
+            <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+              <template #icon><n-icon><TrashOutline /></n-icon></template>
+              删除
+            </n-button>
+          </n-space>
+          <n-button @click="columnSettingVisible = true">
+            <template #icon><n-icon><SettingsOutline /></n-icon></template>
+            列设置
           </n-button>
         </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="columns"
+        :columns="tableColumns"
         :data="tableData"
         :loading="loading"
-        :pagination="pagination"
         :row-key="(row) => row.id"
         :scroll-x="1200"
-        @update:page="handlePageChange"
-        @update:page-size="handlePageSizeChange"
         @update:checked-row-keys="handleCheck"
       />
+      <div style="display: flex; justify-content: flex-end; margin-top: 12px">
+        <n-pagination
+          v-model:page="pagination.page"
+          v-model:page-size="preference.pageSize"
+          :item-count="pagination.itemCount"
+          :page-sizes="[10, 20, 50, 100]"
+          show-size-picker
+          show-quick-jumper
+          @update:page="handlePageChange"
+          @update:page-size="handlePageSizeChange"
+        >
+          <template #prefix>
+            共 {{ pagination.itemCount }} 条
+          </template>
+        </n-pagination>
+      </div>
     </n-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -135,19 +154,33 @@
         <n-button @click="importModalVisible = false">关闭</n-button>
       </template>
     </n-modal>
+
+    <TableColumnSetting
+      v-model:show="columnSettingVisible"
+      :column-defs="preference.columnDefs"
+      :column-configs="preference.columnConfigs"
+      @confirm="handleColumnConfirm"
+      @reset="handleColumnReset"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted } from 'vue'
-import { NButton, NSpace, NIcon, NUpload, useMessage, useDialog, type DataTableColumns, type UploadCustomRequestOptions } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, TrashOutline, CreateOutline, CloudUploadOutline, DownloadOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { NButton, NSpace, NIcon, NUpload, NPagination, useMessage, useDialog, type DataTableColumns, type UploadCustomRequestOptions } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline, TrashOutline, CreateOutline, CloudUploadOutline, DownloadOutline, SettingsOutline } from '@vicons/ionicons5'
 import { studentApi, type Student } from '@/api/student'
 import ImageUpload from '@/components/ImageUpload.vue'
+import TableColumnSetting from '@/components/TableColumnSetting.vue'
 import { dictDataApi } from '@/api/org'
+import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
+import { useUserStore } from '@/stores/user'
 
 const message = useMessage()
 const dialog = useDialog()
+
+const userStore = useUserStore()
+const hasPermission = (permission: string) => userStore.hasPermission(permission)
 
 // 搜索表单
 const searchForm = reactive({
@@ -196,58 +229,88 @@ const formRules = {
   name: { required: true, message: '请输入姓名', trigger: 'blur' },
 }
 
-// 表格列
-const columns: DataTableColumns<Student> = [
-  { type: 'selection' },
-  { title: 'id', key: 'id' },
-  { title: '学号', key: 'studentNo' },
-  { title: '姓名', key: 'name' },
-  { title: '性别', key: 'gender',
-    render(row) {
-      const val = row.gender
-      const opt = genderOptions.value.find(o => o.value === val || String(o.value) === String(val))
-      return opt ? opt.label : (val ?? '-')
+const columnDefs: ColumnDefinition<Student>[] = [
+  { key: 'selection', title: '选择', column: { type: 'selection' } },
+  { key: 'id', title: 'id', column: { title: 'id', key: 'id' } },
+  { key: 'studentNo', title: '学号', column: { title: '学号', key: 'studentNo' } },
+  { key: 'name', title: '姓名', column: { title: '姓名', key: 'name' } },
+  {
+    key: 'gender',
+    title: '性别',
+    column: {
+      title: '性别',
+      key: 'gender',
+      render(row) {
+        const val = row.gender
+        const opt = genderOptions.value.find(o => o.value === val || String(o.value) === String(val))
+        return opt ? opt.label : (val ?? '-')
+      }
     }
   },
-  { title: '出生日期', key: 'birthday' },
-  { title: '手机号', key: 'phone' },
-  { title: '邮箱', key: 'email' },
-  { 
-    title: '地址', 
+  { key: 'birthday', title: '出生日期', column: { title: '出生日期', key: 'birthday' } },
+  { key: 'phone', title: '手机号', column: { title: '手机号', key: 'phone' } },
+  { key: 'email', title: '邮箱', column: { title: '邮箱', key: 'email' } },
+  {
     key: 'address',
-    width: 100,
-    render(row) {
-      return row.address ? h('img', { 
-        src: row.address, 
-        style: { width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' } 
-      }) : '-'
+    title: '地址',
+    column: {
+      title: '地址',
+      key: 'address',
+      width: 100,
+      render(row) {
+        return row.address ? h('img', {
+          src: row.address,
+          style: { width: '60px', height: '60px', objectFit: 'cover', borderRadius: '4px' }
+        }) : '-'
+      }
     }
   },
-  { title: '班级ID', key: 'classId' },
-  { title: '状态', key: 'status',
-    render(row) {
-      const val = row.status
-      const opt = statusOptions.value.find(o => o.value === val || String(o.value) === String(val))
-      return opt ? opt.label : (val ?? '-')
+  { key: 'classId', title: '班级ID', column: { title: '班级ID', key: 'classId' } },
+  {
+    key: 'status',
+    title: '状态',
+    column: {
+      title: '状态',
+      key: 'status',
+      render(row) {
+        const val = row.status
+        const opt = statusOptions.value.find(o => o.value === val || String(o.value) === String(val))
+        return opt ? opt.label : (val ?? '-')
+      }
     }
   },
   {
-    title: '操作',
     key: 'actions',
-    width: 140,
+    title: '操作',
     fixed: 'right',
-    render(row) {
-      return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' } }, [
-        h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
-          default: () => [h(NIcon, null, { default: () => h(CreateOutline) }), ' 编辑']
-        }),
-        h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
-          default: () => [h(NIcon, null, { default: () => h(TrashOutline) }), ' 删除']
-        })
-      ])
+    column: {
+      title: '操作',
+      key: 'actions',
+      width: 140,
+      fixed: 'right',
+      render(row) {
+        return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'nowrap' } }, [
+          h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(CreateOutline) }), ' 编辑']
+          }),
+          h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(TrashOutline) }), ' 删除']
+          })
+        ])
+      }
     }
   }
 ]
+
+const preference = useTablePreference<Student>('system/student', columnDefs, 10)
+const tableColumns = computed(() => preference.columns.value)
+const columnSettingVisible = ref(false)
+
+pagination.pageSize = preference.pageSize.value
+
+watch(preference.pageSize, (newSize) => {
+  pagination.pageSize = newSize
+})
 
 // 加载数据
 async function loadData() {
@@ -290,10 +353,21 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-function handlePageSizeChange(pageSize: number) {
+async function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
+  await preference.savePageSize(pageSize)
   loadData()
+}
+
+async function handleColumnConfirm(configs: any[]) {
+  await preference.updateColumnOrder(configs)
+  message.success('列设置已保存')
+}
+
+async function handleColumnReset() {
+  await preference.resetToDefault()
+  message.success('已恢复默认设置')
 }
 
 // 选择
@@ -461,7 +535,9 @@ async function loadDictOptions() {
   } catch {}
 }
 
-onMounted(() => {
+onMounted(async () => {
+  await preference.init()
+  pagination.pageSize = preference.pageSize.value
   loadData()
   loadDictOptions()
 })

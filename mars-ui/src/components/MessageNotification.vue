@@ -2,9 +2,12 @@
   <Transition name="slide-up">
     <div v-if="messageStore.showNotification && messageStore.currentNotification" class="notification-popup">
       <div class="notification-header">
-        <div class="notification-icon">
+        <div class="notification-icon" :class="{ 'notification-icon--alert': messageStore.currentNotification.type === 'alert' }">
           <n-icon v-if="messageStore.currentNotification.type === 'notice'" size="20">
             <NotificationsOutline />
+          </n-icon>
+          <n-icon v-else-if="messageStore.currentNotification.type === 'alert'" size="20">
+            <AlertCircleOutline />
           </n-icon>
           <n-icon v-else size="20">
             <ChatbubbleOutline />
@@ -32,7 +35,7 @@
 
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { NotificationsOutline, ChatbubbleOutline, CloseOutline } from '@vicons/ionicons5'
+import { NotificationsOutline, ChatbubbleOutline, CloseOutline, AlertCircleOutline } from '@vicons/ionicons5'
 import { useMessageStore } from '@/stores/message'
 
 const router = useRouter()
@@ -50,14 +53,14 @@ function formatTime(timestamp: number | string | undefined): string {
 function handleView() {
   const notification = messageStore.currentNotification
   messageStore.closeNotification()
-  if (notification?.type === 'notice') {
+  if (notification?.type === 'alert') {
+    router.push('/monitor/server')
+  } else if (notification?.type === 'notice') {
     router.push('/message/notice')
   } else {
-    // 如果有群ID，跳转到群聊
     if (notification?.groupId) {
       router.push({ path: '/message/chat', query: { groupId: notification.groupId.toString() } })
     }
-    // 如果有发送者ID，跳转到私聊
     else if (notification?.senderId) {
       router.push({ path: '/message/chat', query: { userId: notification.senderId.toString() } })
     } else {
@@ -97,6 +100,10 @@ function handleView() {
   background: #e8f5e9;
   border-radius: 50%;
   color: #18a058;
+}
+.notification-icon--alert {
+  background: #fff0f0;
+  color: #d03050;
 }
 
 .notification-title {

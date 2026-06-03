@@ -1,6 +1,26 @@
 import { request } from '@/utils/request'
 import { PageResult } from './system'
 
+// ==================== 组织架构树节点 ====================
+export interface OrgTreeNode {
+  key: string
+  label: string
+  nodeType: 'virtual' | 'dept' | 'post' | 'user'
+  nodeId?: number
+  isLeaf?: boolean
+  extra?: Record<string, any>
+  children?: OrgTreeNode[]
+}
+
+export const orgStructureApi = {
+  tree(): Promise<OrgTreeNode[]> {
+    return request({ url: '/sys/org/tree', method: 'get' })
+  },
+  users(nodeType: string, nodeId: number): Promise<OrgTreeNode[]> {
+    return request({ url: '/sys/org/users', method: 'get', params: { nodeType, nodeId } })
+  }
+}
+
 // ==================== 部门管理 ====================
 export interface SysDept {
   id?: number
