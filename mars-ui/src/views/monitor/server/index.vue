@@ -403,6 +403,8 @@ async function saveThresholds() {
     message.success('阈值设置已保存')
     showThresholdModal.value = false
     loadAlertConfigs()
+    await loadServerInfo()
+    await loadActiveAlerts()
   } catch {
     message.error('保存失败')
   }

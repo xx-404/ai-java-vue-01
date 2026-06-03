@@ -14,7 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.util.StringUtils;
 
 import com.mars.admin.websocket.MessageWebSocketHandler;
-import com.mars.system.entity.SysAlertRecord;
+import com.mars.system.alert.AlertMetricStrategy;
+import com.mars.system.alert.AlertMetricStrategyRegistry;
 import com.mars.system.service.SysAlertRecordService;
 
 import java.io.ByteArrayInputStream;
@@ -37,6 +38,7 @@ public class MonitorController {
     private final StringRedisTemplate redisTemplate;
     private final SysAlertRecordService alertRecordService;
     private final MessageWebSocketHandler webSocketHandler;
+    private final AlertMetricStrategyRegistry strategyRegistry;
 
     /**
      * 获取在线用户列表
@@ -303,20 +305,29 @@ public class MonitorController {
         result.put("disks", disks);
 
         try {
-            List<SysAlertRecord> newAlerts = alertRecordService.checkAndAlert(result);
-            for (SysAlertRecord alert : newAlerts) {
-                String typeName = switch (alert.getAlertType()) {
-                    case "cpu" -> "CPU";
-                    case "memory" -> "内存";
-                    case "disk" -> "磁盘";
-                    default -> alert.getAlertType();
-                };
-                String content = String.format("%s使用率 %.1f%% 超过阈值 %.1f%%",
-                        typeName, alert.getCurrentValue().doubleValue(), alert.getThreshold().doubleValue());
-                webSocketHandler.sendNotice(null, "服务器告警 - " + typeName, content);
+            Map<String, List<com.mars.system.entity.SysAlertRecord>> alertResult = alertRecordService.checkAndAlertWithResult(result);
+            List<com.mars.system.entity.SysAlertRecord> newAlerts = alertResult.get("newAlerts");
+            List<com.mars.system.entity.SysAlertRecord> recovered = alertResult.get("recovered");
+
+            for (com.mars.system.entity.SysAlertRecord alert : newAlerts) {
+                AlertMetricStrategy strategy = strategyRegistry.getStrategy(alert.getAlertType()).orElse(null);
+                String content = strategy != null
+                        ? strategy.formatAlertContent(alert.getCurrentValue(), alert.getThreshold())
+                        : String.format("%s值 %.1f%% 超过阈值 %.1f%%", alert.getAlertType(), alert.getCurrentValue().doubleValue(), alert.getThreshold().doubleValue());
+                String title = strategy != null ? strategy.formatAlertTitle() : "服务器告警 - " + alert.getAlertType();
+                webSocketHandler.sendAlert(null, title, content, alert.getAlertType(), false);
             }
 
-            List<SysAlertRecord> activeAlerts = alertRecordService.activeList();
+            for (com.mars.system.entity.SysAlertRecord record : recovered) {
+                AlertMetricStrategy strategy = strategyRegistry.getStrategy(record.getAlertType()).orElse(null);
+                String content = strategy != null
+                        ? strategy.formatRecoverContent(record.getCurrentValue(), record.getThreshold())
+                        : String.format("%s值已恢复至 %.1f%%（阈值 %.1f%%）", record.getAlertType(), record.getCurrentValue().doubleValue(), record.getThreshold().doubleValue());
+                String title = strategy != null ? strategy.formatRecoverTitle() : "告警恢复 - " + record.getAlertType();
+                webSocketHandler.sendAlert(null, title, content, record.getAlertType(), true);
+            }
+
+            List<com.mars.system.entity.SysAlertRecord> activeAlerts = alertRecordService.activeList();
             result.put("activeAlerts", activeAlerts);
             result.put("alertCount", activeAlerts.size());
         } catch (Exception e) {

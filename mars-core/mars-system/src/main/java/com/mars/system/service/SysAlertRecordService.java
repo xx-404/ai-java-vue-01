@@ -17,5 +17,7 @@ public interface SysAlertRecordService extends IService<SysAlertRecord> {
 
     List<SysAlertRecord> checkAndAlert(Map<String, Object> serverInfo);
 
+    Map<String, List<SysAlertRecord>> checkAndAlertWithResult(Map<String, Object> serverInfo);
+
     long activeCount();
 }

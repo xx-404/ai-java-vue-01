@@ -4,6 +4,8 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.mars.admin.websocket.MessageWebSocketHandler;
 import com.mars.common.result.Result;
+import com.mars.system.alert.AlertMetricStrategy;
+import com.mars.system.alert.AlertMetricStrategyRegistry;
 import com.mars.system.entity.SysAlertConfig;
 import com.mars.system.entity.SysAlertRecord;
 import com.mars.system.service.SysAlertConfigService;
@@ -12,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/monitor/alert")
@@ -21,6 +24,7 @@ public class SysAlertController {
     private final SysAlertConfigService alertConfigService;
     private final SysAlertRecordService alertRecordService;
     private final MessageWebSocketHandler webSocketHandler;
+    private final AlertMetricStrategyRegistry strategyRegistry;
 
     @GetMapping("/config/list")
     @SaCheckPermission("monitor:server:list")
@@ -74,26 +78,27 @@ public class SysAlertController {
 
     @PostMapping("/check")
     @SaCheckPermission("monitor:server:list")
-    public Result<List<SysAlertRecord>> checkAndNotify(@RequestBody java.util.Map<String, Object> serverInfo) {
-        List<SysAlertRecord> newAlerts = alertRecordService.checkAndAlert(serverInfo);
+    public Result<List<SysAlertRecord>> checkAndNotify(@RequestBody Map<String, Object> serverInfo) {
+        Map<String, List<SysAlertRecord>> alertResult = alertRecordService.checkAndAlertWithResult(serverInfo);
+        List<SysAlertRecord> newAlerts = alertResult.get("newAlerts");
+        List<SysAlertRecord> recovered = alertResult.get("recovered");
 
         for (SysAlertRecord alert : newAlerts) {
-            String typeName = getTypeName(alert.getAlertType());
-            String content = String.format("%s使用率 %.1f%% 超过阈值 %.1f%%",
-                    typeName, alert.getCurrentValue().doubleValue(), alert.getThreshold().doubleValue());
-            webSocketHandler.sendNotice(null, "服务器告警 - " + typeName, content);
+            AlertMetricStrategy strategy = strategyRegistry.getStrategy(alert.getAlertType()).orElse(null);
+            String content = strategy != null
+                    ? strategy.formatAlertContent(alert.getCurrentValue(), alert.getThreshold())
+                    : String.format("%s值 %.1f%% 超过阈值 %.1f%%", alert.getAlertType(), alert.getCurrentValue().doubleValue(), alert.getThreshold().doubleValue());
+            String title = strategy != null ? strategy.formatAlertTitle() : "服务器告警 - " + alert.getAlertType();
+            webSocketHandler.sendAlert(null, title, content, alert.getAlertType(), false);
         }
 
-        List<SysAlertRecord> recovered = alertRecordService.lambdaQuery()
-                .eq(SysAlertRecord::getStatus, 2)
-                .ge(SysAlertRecord::getRecoverTime, java.time.LocalDateTime.now().minusMinutes(1))
-                .list();
-
         for (SysAlertRecord record : recovered) {
-            String typeName = getTypeName(record.getAlertType());
-            String content = String.format("%s使用率已恢复至 %.1f%%（阈值 %.1f%%）",
-                    typeName, record.getCurrentValue().doubleValue(), record.getThreshold().doubleValue());
-            webSocketHandler.sendNotice(null, "告警恢复 - " + typeName, content);
+            AlertMetricStrategy strategy = strategyRegistry.getStrategy(record.getAlertType()).orElse(null);
+            String content = strategy != null
+                    ? strategy.formatRecoverContent(record.getCurrentValue(), record.getThreshold())
+                    : String.format("%s值已恢复至 %.1f%%（阈值 %.1f%%）", record.getAlertType(), record.getCurrentValue().doubleValue(), record.getThreshold().doubleValue());
+            String title = strategy != null ? strategy.formatRecoverTitle() : "告警恢复 - " + record.getAlertType();
+            webSocketHandler.sendAlert(null, title, content, record.getAlertType(), true);
         }
 
         return Result.ok(newAlerts);
@@ -113,14 +118,5 @@ public class SysAlertController {
                 .eq(SysAlertRecord::getStatus, 2)
                 .remove();
         return Result.ok();
-    }
-
-    private String getTypeName(String type) {
-        return switch (type) {
-            case "cpu" -> "CPU";
-            case "memory" -> "内存";
-            case "disk" -> "磁盘";
-            default -> type;
-        };
     }
 }
