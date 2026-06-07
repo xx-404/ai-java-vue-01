@@ -148,27 +148,4 @@ public class SysRoleServiceImpl extends ServiceImpl<SysRoleMapper, SysRole> impl
             }
         }
     }
-
-    @Override
-    public SysRole getCopyDetail(Long id) {
-        return this.getById(id);
-    }
-
-    @Override
-    @Transactional(rollbackFor = Exception.class)
-    public void copy(SysRole role, List<Long> menuIds, List<Long> deptIds) {
-        // 检查角色编码是否存在
-        if (this.getOne(new LambdaQueryWrapper<SysRole>().eq(SysRole::getCode, role.getCode())) != null) {
-            throw new BusinessException("角色编码已存在");
-        }
-        // 清除ID，创建新角色
-        role.setId(null);
-        this.save(role);
-        // 保存角色菜单关联
-        saveRoleMenus(role.getId(), menuIds);
-        // 保存角色部门关联
-        if (Integer.valueOf(2).equals(role.getDataScope())) {
-            saveRoleDepts(role.getId(), deptIds);
-        }
-    }
 }

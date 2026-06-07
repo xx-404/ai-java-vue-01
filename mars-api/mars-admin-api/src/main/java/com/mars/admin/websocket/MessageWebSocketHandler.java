@@ -160,31 +160,6 @@ public class MessageWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * 发送告警通知
-     */
-    public void sendAlert(Long userId, String title, String content, String alertType, boolean recovered) {
-        try {
-            Map<String, Object> notice = Map.of(
-                    "type", "alert",
-                    "title", title,
-                    "content", content,
-                    "time", System.currentTimeMillis(),
-                    "alertType", alertType != null ? alertType : "",
-                    "recovered", recovered
-            );
-            String message = objectMapper.writeValueAsString(notice);
-
-            if (userId == null || userId == 0) {
-                broadcastMessage(message);
-            } else {
-                sendToUser(userId, message);
-            }
-        } catch (Exception e) {
-            log.error("发送告警通知失败", e);
-        }
-    }
-
-    /**
      * 发送未读消息数量
      */
     public void sendUnreadCount(Long userId, int noticeCount, int chatCount) {

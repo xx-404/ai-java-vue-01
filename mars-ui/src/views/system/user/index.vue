@@ -43,41 +43,33 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <n-space>
-            <n-button v-if="hasPermission('sys:user:add')" type="primary" @click="handleAdd">
-              <template #icon><n-icon><AddOutline /></n-icon></template>
-              新增用户
-            </n-button>
-            <n-button v-if="hasPermission('sys:user:import')" @click="importModalVisible = true">
-              <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
-              导入
-            </n-button>
-            <n-button v-if="hasPermission('sys:user:export')" @click="handleExport">
-              <template #icon><n-icon><DownloadOutline /></n-icon></template>
-              导出{{ checkedRowKeys.length > 0 ? `(${checkedRowKeys.length})` : '' }}
-            </n-button>
-            <n-button 
-              v-if="hasPermission('sys:user:delete') && checkedRowKeys.length > 0" 
-              type="error" 
-              @click="handleBatchDelete"
-            >
-              <template #icon><n-icon><TrashOutline /></n-icon></template>
-              批量删除({{ checkedRowKeys.length }})
-            </n-button>
-          </n-space>
-          <n-space>
-            <n-button @click="columnSettingVisible = true">
-              <template #icon><n-icon><SettingsOutline /></n-icon></template>
-              列设置
-            </n-button>
-          </n-space>
+        <n-space>
+          <n-button v-if="hasPermission('sys:user:add')" type="primary" @click="handleAdd">
+            <template #icon><n-icon><AddOutline /></n-icon></template>
+            新增用户
+          </n-button>
+          <n-button v-if="hasPermission('sys:user:import')" @click="importModalVisible = true">
+            <template #icon><n-icon><CloudUploadOutline /></n-icon></template>
+            导入
+          </n-button>
+          <n-button v-if="hasPermission('sys:user:export')" @click="handleExport">
+            <template #icon><n-icon><DownloadOutline /></n-icon></template>
+            导出{{ checkedRowKeys.length > 0 ? `(${checkedRowKeys.length})` : '' }}
+          </n-button>
+          <n-button 
+            v-if="hasPermission('sys:user:delete') && checkedRowKeys.length > 0" 
+            type="error" 
+            @click="handleBatchDelete"
+          >
+            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            批量删除({{ checkedRowKeys.length }})
+          </n-button>
         </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="tableColumns"
+        :columns="columns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysUser) => row.id"
@@ -88,7 +80,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
+          v-model:page-size="pagination.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -264,27 +256,17 @@
         </n-space>
       </template>
     </n-modal>
-
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { ref, reactive, h, onMounted, computed, type HTMLAttributes } from 'vue'
 import { useRoute } from 'vue-router'
 import { NButton, NTag, NSpace, NDropdown, NPagination, NGrid, NGi, NUploadDragger, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeOption, type UploadCustomRequestOptions } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, ChevronDownOutline, CloudUploadOutline, DownloadOutline, TrashOutline, SettingsOutline } from '@vicons/ionicons5'
+import { SearchOutline, RefreshOutline, AddOutline, ChevronDownOutline, CloudUploadOutline, DownloadOutline, TrashOutline } from '@vicons/ionicons5'
 import { userApi, roleApi, postApi, type SysUser, type SysRole } from '@/api/system'
 import { deptApi, type SysDept } from '@/api/org'
 import { useUserStore } from '@/stores/user'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -332,6 +314,8 @@ const pagination = reactive({
   itemCount: 0
 })
 
+const pageCount = computed(() => Math.ceil(pagination.itemCount / pagination.pageSize))
+
 const roleOptions = ref<Array<{ label: string; value: number }>>([])
 
 const userTypeOptions = [
@@ -340,124 +324,136 @@ const userTypeOptions = [
   { label: 'App/小程序用户', value: 'app' }
 ]
 
-const columnDefs: ColumnDefinition<SysUser>[] = [
-  { key: 'selection', title: '选择', column: { type: 'selection' } },
-  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 60 } },
-  { key: 'username', title: '用户名', column: { title: '用户名', key: 'username', width: 100 } },
-  { key: 'nickname', title: '昵称', column: { title: '昵称', key: 'nickname', width: 100 } },
-  { key: 'deptName', title: '部门', column: { title: '部门', key: 'deptName', width: 100, render(row) { return row.deptName || '-' } } },
-  { key: 'postNames', title: '岗位', column: { title: '岗位', key: 'postNames', width: 150, render(row) { return row.postNames || '-' } } },
+const columns: DataTableColumns<SysUser> = [
+  { type: 'selection' },
+  { title: 'ID', key: 'id', width: 60 },
+  { title: '用户名', key: 'username', width: 100 },
+  { title: '昵称', key: 'nickname', width: 100 },
+  { title: '部门', key: 'deptName', width: 100, render(row) {
+    return row.deptName || '-'
+  }},
+  { title: '岗位', key: 'postNames', width: 150, render(row) {
+    return row.postNames || '-'
+  }},
   {
-    key: 'userType',
     title: '用户类型',
-    column: {
-      title: '用户类型',
-      key: 'userType',
-      width: 110,
-      render(row) {
-        const typeMap: Record<string, { type: 'info' | 'success' | 'warning'; label: string }> = {
-          admin: { type: 'info', label: '后台管理员' },
-          pc: { type: 'success', label: 'PC前台' },
-          app: { type: 'warning', label: 'App/小程序' }
-        }
-        const t = typeMap[row.userType || 'admin'] || { type: 'info', label: row.userType || '未知' }
-        return h(NTag, { type: t.type, size: 'small' }, { default: () => t.label })
+    key: 'userType',
+    width: 110,
+    render(row) {
+      const typeMap: Record<string, { type: 'info' | 'success' | 'warning'; label: string }> = {
+        admin: { type: 'info', label: '后台管理员' },
+        pc: { type: 'success', label: 'PC前台' },
+        app: { type: 'warning', label: 'App/小程序' }
       }
+      const t = typeMap[row.userType || 'admin'] || { type: 'info', label: row.userType || '未知' }
+      return h(NTag, { type: t.type, size: 'small' }, { default: () => t.label })
     }
   },
-  { key: 'phone', title: '手机号', column: { title: '手机号', key: 'phone', width: 120, render(row) { return row.phone || '-' } } },
+  { title: '手机号', key: 'phone', width: 120 , render(row) {
+      return row.phone || '-'
+    }},
   {
-    key: 'isQuit',
     title: '离职',
-    column: {
-      title: '离职',
-      key: 'isQuit',
-      width: 80,
-      render(row) {
-        const quit = row.isQuit === 1
-        return h(NTag, { type: quit ? 'error' : 'success', size: 'small' }, { default: () => (quit ? '是' : '否') })
-      }
+    key: 'isQuit',
+    width: 80,
+    render(row) {
+      const quit = row.isQuit === 1
+      return h(NTag, { type: quit ? 'error' : 'success', size: 'small' }, { default: () => (quit ? '是' : '否') })
     }
   },
   {
-    key: 'status',
     title: '状态',
-    column: {
-      title: '状态',
-      key: 'status',
-      width: 80,
-      render(row) {
-        const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
-          0: { type: 'error', label: '禁用' },
-          1: { type: 'success', label: '启用' },
-          2: { type: 'warning', label: '待审核' },
-          3: { type: 'error', label: '审核拒绝' }
-        }
-        const status = statusMap[row.status] || { type: 'info', label: '未知' }
-        return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
+    key: 'status',
+    width: 80,
+    render(row) {
+      const statusMap: Record<number, { type: 'success' | 'error' | 'warning' | 'info'; label: string }> = {
+        0: { type: 'error', label: '禁用' },
+        1: { type: 'success', label: '启用' },
+        2: { type: 'warning', label: '待审核' },
+        3: { type: 'error', label: '审核拒绝' }
       }
+      const status = statusMap[row.status] || { type: 'info', label: '未知' }
+      return h(NTag, { type: status.type, size: 'small' }, { default: () => status.label })
     }
   },
-  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 170 } },
+  { title: '创建时间', key: 'createTime', width: 170 },
   {
-    key: 'actions',
     title: '操作',
+    key: 'actions',
+    width: 240,
     fixed: 'right',
-    column: {
-      title: '操作',
-      key: 'actions',
-      width: 240,
-      fixed: 'right',
-      render(row) {
-        const buttons = []
-        if (row.status === 2 && hasPermission('sys:user:edit')) {
-          buttons.push(h(NButton, { size: 'small', type: 'success', onClick: () => handleApprove(row) }, { default: () => '通过' }))
-          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleReject(row) }, { default: () => '拒绝' }))
-        }
-        if (hasPermission('sys:user:edit')) {
-          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
-        }
-        if (hasPermission('sys:user:delete')) {
-          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
-        }
-        if (hasPermission('sys:user:edit')) {
-          const moreOptions = []
-          if (row.status !== 2) {
-            moreOptions.push({ label: '重置密码', key: 'resetPassword' })
-          }
-          moreOptions.push({ label: row.isQuit === 1 ? '取消离职' : '离职', key: 'toggleQuit' })
-          buttons.push(
-            h(
-              NDropdown,
-              {
-                trigger: 'click',
-                options: moreOptions,
-                onSelect: (key) => {
-                  if (key === 'toggleQuit') { handleToggleQuit(row) }
-                  else if (key === 'resetPassword') { handleResetPassword(row) }
-                }
-              },
-              {
-                default: () => h(NButton, { size: 'small' }, { default: () => '更多', icon: () => h(ChevronDownOutline) })
-              }
-            )
-          )
-        }
-        return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
+    render(row) {
+      const buttons = []
+      // 待审核状态显示审核按钮
+      if (row.status === 2 && hasPermission('sys:user:edit')) {
+        buttons.push(
+          h(NButton, { size: 'small', type: 'success', onClick: () => handleApprove(row) }, { default: () => '通过' })
+        )
+        buttons.push(
+          h(NButton, { size: 'small', type: 'error', onClick: () => handleReject(row) }, { default: () => '拒绝' })
+        )
       }
+      if (hasPermission('sys:user:edit')) {
+        buttons.push(
+          h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' })
+        )
+      }
+      if (hasPermission('sys:user:delete')) {
+        buttons.push(
+          h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' })
+        )
+      }
+
+      // 更多操作
+      if (hasPermission('sys:user:edit')) {
+        const moreOptions = []
+
+        // 重置密码移入更多
+        if (row.status !== 2) {
+          moreOptions.push({
+            label: '重置密码',
+            key: 'resetPassword'
+          })
+        }
+
+        moreOptions.push({
+          label: row.isQuit === 1 ? '取消离职' : '离职',
+          key: 'toggleQuit'
+        })
+
+        buttons.push(
+          h(
+            NDropdown,
+            {
+              trigger: 'click',
+              options: moreOptions,
+              onSelect: (key) => {
+                if (key === 'toggleQuit') {
+                  handleToggleQuit(row)
+                } else if (key === 'resetPassword') {
+                  handleResetPassword(row)
+                }
+              }
+            },
+            {
+              default: () =>
+                h(
+                  NButton,
+                  { size: 'small' },
+                  {
+                    default: () => '更多',
+                    icon: () => h(ChevronDownOutline)
+                  }
+                )
+            }
+          )
+        )
+      }
+
+      return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
     }
   }
 ]
-
-const preference = useTablePreference<SysUser>('system/user', columnDefs, 10)
-const tableColumns = computed(() => preference.columns.value)
-const columnSettingVisible = ref(false)
-
-pagination.pageSize = preference.pageSize.value
-
-watch(preference.pageSize, (newSize) => {
-  pagination.pageSize = newSize
-})
 
 // ==================== 弹窗 ====================
 const modalVisible = ref(false)
@@ -552,21 +548,10 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-async function handlePageSizeChange(pageSize: number) {
+function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
-  await preference.savePageSize(pageSize)
   loadData()
-}
-
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
 }
 
 function handleAdd() {
@@ -808,9 +793,7 @@ async function handleImportUpload({ file }: UploadCustomRequestOptions) {
   }
 }
 
-onMounted(async () => {
-  await preference.init()
-  pagination.pageSize = preference.pageSize.value
+onMounted(() => {
   const deptId = route.query.deptId
   if (deptId) {
     selectedDeptId.value = Number(deptId)

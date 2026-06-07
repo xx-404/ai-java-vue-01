@@ -173,60 +173,6 @@ export const serverApi = {
   }
 }
 
-// ==================== 告警配置 ====================
-export interface SysAlertConfig {
-  id?: number
-  alertType: string
-  metricKey?: string
-  threshold: number
-  enabled: number
-  createTime?: string
-  updateTime?: string
-}
-
-export interface SysAlertRecord {
-  id?: number
-  alertType: string
-  metricKey?: string
-  currentValue: number
-  threshold: number
-  status: number
-  triggerTime: string
-  recoverTime?: string
-  createTime?: string
-  updateTime?: string
-}
-
-export const alertApi = {
-  configList(): Promise<SysAlertConfig[]> {
-    return request({ url: '/monitor/alert/config/list', method: 'get' })
-  },
-  updateConfig(data: SysAlertConfig): Promise<void> {
-    return request({ url: '/monitor/alert/config', method: 'put', data })
-  },
-  updateConfigBatch(data: SysAlertConfig[]): Promise<void> {
-    return request({ url: '/monitor/alert/config/batch', method: 'put', data })
-  },
-  activeList(): Promise<SysAlertRecord[]> {
-    return request({ url: '/monitor/alert/active/list', method: 'get' })
-  },
-  activePage(params: { page: number; pageSize: number; alertType?: string }): Promise<PageResult<SysAlertRecord>> {
-    return request({ url: '/monitor/alert/active/page', method: 'get', params })
-  },
-  historyPage(params: { page: number; pageSize: number; alertType?: string }): Promise<PageResult<SysAlertRecord>> {
-    return request({ url: '/monitor/alert/history/page', method: 'get', params })
-  },
-  activeCount(): Promise<number> {
-    return request({ url: '/monitor/alert/count', method: 'get' })
-  },
-  deleteRecord(id: number): Promise<void> {
-    return request({ url: `/monitor/alert/record/${id}`, method: 'delete' })
-  },
-  cleanHistory(): Promise<void> {
-    return request({ url: '/monitor/alert/record/clean', method: 'delete' })
-  }
-}
-
 // ==================== API 访问统计 ====================
 export interface ApiAccessLog {
   id?: number

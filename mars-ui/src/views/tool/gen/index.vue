@@ -24,31 +24,25 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <n-space>
-            <n-button type="primary" @click="handleOpenImport">
-              <template #icon><n-icon><CloudDownloadOutline /></n-icon></template>
-              导入表
-            </n-button>
-            <n-button type="success" :disabled="selectedIds.length === 0" @click="handleBatchGenerate">
-              <template #icon><n-icon><CodeSlashOutline /></n-icon></template>
-              生成代码
-            </n-button>
-            <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
-              <template #icon><n-icon><TrashOutline /></n-icon></template>
-              删除
-            </n-button>
-          </n-space>
-          <n-button @click="columnSettingVisible = true">
-            <template #icon><n-icon><SettingsOutline /></n-icon></template>
-            列设置
+        <n-space>
+          <n-button type="primary" @click="handleOpenImport">
+            <template #icon><n-icon><CloudDownloadOutline /></n-icon></template>
+            导入表
+          </n-button>
+          <n-button type="success" :disabled="selectedIds.length === 0" @click="handleBatchGenerate">
+            <template #icon><n-icon><CodeSlashOutline /></n-icon></template>
+            生成代码
+          </n-button>
+          <n-button type="error" :disabled="selectedIds.length === 0" @click="handleBatchDelete">
+            <template #icon><n-icon><TrashOutline /></n-icon></template>
+            删除
           </n-button>
         </n-space>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="tableColumns"
+        :columns="columns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: GenTable) => row.id"
@@ -59,7 +53,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
+          v-model:page-size="pagination.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -344,31 +338,18 @@
         </n-space>
       </template>
     </n-modal>
-
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { ref, reactive, h, onMounted } from 'vue'
 import { NButton, NSpace, NIcon, NTag, NSwitch, NSelect, NInput, NText, NList, NListItem, NScrollbar, NAlert, NEmpty, NSpin, NPagination, useMessage, useDialog, type DataTableColumns } from 'naive-ui'
 import { SearchOutline, RefreshOutline, CloudDownloadOutline, CodeSlashOutline, TrashOutline, SettingsOutline, EyeOutline, SyncOutline, CloseCircleOutline, ExpandOutline } from '@vicons/ionicons5'
 import { genApi, type GenTable, type GenTableColumn, type DatabaseTable } from '@/api/gen'
 import { dictTypeApi } from '@/api/org'
-import { useUserStore } from '@/stores/user'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
-const userStore = useUserStore()
-const hasPermission = (permission: string) => userStore.hasPermission(permission)
 
 // 搜索表单
 const searchForm = reactive({
@@ -449,57 +430,42 @@ const previewLoading = ref(false)
 const previewAction = ref<'generate' | 'remove'>('generate')
 
 // 表格列
-const columnDefs: ColumnDefinition<GenTable>[] = [
-  { key: 'selection', title: '选择', column: { type: 'selection' } },
-  { key: 'tableName', title: '表名', column: { title: '表名', key: 'tableName', width: 200 } },
-  { key: 'tableComment', title: '表描述', column: { title: '表描述', key: 'tableComment', ellipsis: { tooltip: true } } },
-  { key: 'className', title: '实体类', column: { title: '实体类', key: 'className', width: 200 } },
-  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
+const columns: DataTableColumns<GenTable> = [
+  { type: 'selection' },
+  { title: '表名', key: 'tableName', width: 200 },
+  { title: '表描述', key: 'tableComment', ellipsis: { tooltip: true } },
+  { title: '实体类', key: 'className', width: 200 },
+  { title: '创建时间', key: 'createTime', width: 180 },
   {
-    key: 'actions',
     title: '操作',
-    fixed: 'right',
-    column: {
-      title: '操作',
-      key: 'actions',
-      width: 500,
-      render(row) {
-        return h(NSpace, null, {
-          default: () => [
-            h(NButton, { size: 'small', quaternary: true, onClick: () => handlePreview(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(EyeOutline) }), ' 预览']
-            }),
-            h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(SettingsOutline) }), ' 配置']
-            }),
-            h(NButton, { size: 'small', quaternary: true, type: 'success', onClick: () => handleGenerate(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(CodeSlashOutline) }), ' 生成']
-            }),
-            h(NButton, { size: 'small', quaternary: true, onClick: () => handleSync(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(SyncOutline) }), ' 同步']
-            }),
-            h(NButton, { size: 'small', quaternary: true, type: 'warning', onClick: () => handleRemoveCodeDirect(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(CloseCircleOutline) }), ' 移除']
-            }),
-            h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
-              default: () => [h(NIcon, null, { default: () => h(TrashOutline) }),'删除']
-            })
-          ]
-        })
-      }
+    key: 'actions',
+    width: 500,
+    render(row) {
+      return h(NSpace, null, {
+        default: () => [
+          h(NButton, { size: 'small', quaternary: true, onClick: () => handlePreview(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(EyeOutline) }), ' 预览']
+          }),
+          h(NButton, { size: 'small', quaternary: true, onClick: () => handleEdit(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(SettingsOutline) }), ' 配置']
+          }),
+          h(NButton, { size: 'small', quaternary: true, type: 'success', onClick: () => handleGenerate(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(CodeSlashOutline) }), ' 生成']
+          }),
+          h(NButton, { size: 'small', quaternary: true, onClick: () => handleSync(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(SyncOutline) }), ' 同步']
+          }),
+          h(NButton, { size: 'small', quaternary: true, type: 'warning', onClick: () => handleRemoveCodeDirect(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(CloseCircleOutline) }), ' 移除']
+          }),
+          h(NButton, { size: 'small', quaternary: true, type: 'error', onClick: () => handleDelete(row) }, {
+            default: () => [h(NIcon, null, { default: () => h(TrashOutline) }),'删除']
+          })
+        ]
+      })
     }
   }
 ]
-
-const preference = useTablePreference<GenTable>('tool/gen', columnDefs, 10)
-const tableColumns = computed(() => preference.columns.value)
-const columnSettingVisible = ref(false)
-
-pagination.pageSize = preference.pageSize.value
-
-watch(preference.pageSize, (newSize) => {
-  pagination.pageSize = newSize
-})
 
 // 导入表列
 const importColumns: DataTableColumns<DatabaseTable> = [
@@ -686,21 +652,10 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-async function handlePageSizeChange(pageSize: number) {
+function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
-  await preference.savePageSize(pageSize)
   loadData()
-}
-
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
 }
 
 // 选择
@@ -931,9 +886,7 @@ function getLanguage(filename: string): string {
   return 'text'
 }
 
-onMounted(async () => {
-  await preference.init()
-  pagination.pageSize = preference.pageSize.value
+onMounted(() => {
   loadData()
 })
 </script>

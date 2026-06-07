@@ -73,54 +73,31 @@
         </n-form>
       </div>
 
-      <!-- 工具栏 -->
-      <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <span></span>
-          <n-button @click="columnSettingVisible = true">
-            <template #icon><n-icon><SettingsOutline /></n-icon></template>
-            列设置
-          </n-button>
-        </n-space>
-      </div>
-
-      <n-data-table :columns="tableColumns" :data="tableData" :loading="loading" :row-key="(row: ApiAccessLog) => row.id" />
+      <n-data-table :columns="columns" :data="tableData" :loading="loading" :row-key="(row: ApiAccessLog) => row.id" />
 
       <div class="pagination-container">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
+          v-model:page-size="pagination.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
           show-quick-jumper
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
+          @update:page="loadPage"
+          @update:page-size="loadPage"
         >
           <template #prefix>共 {{ pagination.itemCount }} 条</template>
         </n-pagination>
       </div>
     </n-card>
-
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
-import { NCard, NGrid, NGi, NForm, NFormItem, NInput, NSelect, NDatePicker, NButton, NSpace, NIcon, NDataTable, NPagination, type DataTableColumns, useMessage } from 'naive-ui'
-import { SearchOutline, RefreshOutline, SettingsOutline } from '@vicons/ionicons5'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { NCard, NGrid, NGi, NForm, NFormItem, NInput, NSelect, NDatePicker, NButton, NSpace, NIcon, NDataTable, NPagination, type DataTableColumns } from 'naive-ui'
+import { SearchOutline, RefreshOutline } from '@vicons/ionicons5'
 import { apiAccessApi, type ApiAccessLog, type ApiAccessStatistics } from '@/api/monitor'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
-
-const message = useMessage()
 
 const stats = reactive<ApiAccessStatistics>({
   totalCount: 0,
@@ -161,36 +138,17 @@ const successOptions = [
   { label: '失败', value: 0 }
 ]
 
-const columnDefs: ColumnDefinition<ApiAccessLog>[] = [
-  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 70 } },
-  { key: 'apiPath', title: 'API 路径', column: { title: 'API 路径', key: 'apiPath', ellipsis: { tooltip: true }, minWidth: 200 } },
-  { key: 'method', title: '方法', column: { title: '方法', key: 'method', width: 80 } },
-  { key: 'statusCode', title: '状态码', column: { title: '状态码', key: 'statusCode', width: 90 } },
-  {
-    key: 'success',
-    title: '成功',
-    column: {
-      title: '成功',
-      key: 'success',
-      width: 70,
-      render: (row) => row.success === 1 ? '是' : '否'
-    }
-  },
-  { key: 'costTime', title: '耗时(ms)', column: { title: '耗时(ms)', key: 'costTime', width: 90 } },
-  { key: 'ip', title: 'IP', column: { title: 'IP', key: 'ip', width: 120 } },
-  { key: 'userId', title: '用户ID', column: { title: '用户ID', key: 'userId', width: 90 } },
-  { key: 'startTime', title: '请求时间', column: { title: '请求时间', key: 'startTime', width: 180 } }
+const columns: DataTableColumns<ApiAccessLog> = [
+  { title: 'ID', key: 'id', width: 70 },
+  { title: 'API 路径', key: 'apiPath', ellipsis: { tooltip: true }, minWidth: 200 },
+  { title: '方法', key: 'method', width: 80 },
+  { title: '状态码', key: 'statusCode', width: 90 },
+  { title: '成功', key: 'success', width: 70, render: (row) => row.success === 1 ? '是' : '否' },
+  { title: '耗时(ms)', key: 'costTime', width: 90 },
+  { title: 'IP', key: 'ip', width: 120 },
+  { title: '用户ID', key: 'userId', width: 90 },
+  { title: '请求时间', key: 'startTime', width: 180 }
 ]
-
-const preference = useTablePreference<ApiAccessLog>('monitor/api-access', columnDefs, 20)
-const tableColumns = computed(() => preference.columns.value)
-const columnSettingVisible = ref(false)
-
-pagination.pageSize = preference.pageSize.value
-
-watch(preference.pageSize, (newSize) => {
-  pagination.pageSize = newSize
-})
 
 const startDate = computed(() => {
   const d = new Date()
@@ -276,28 +234,6 @@ async function loadPage() {
   }
 }
 
-function handlePageChange(page: number) {
-  pagination.page = page
-  loadPage()
-}
-
-async function handlePageSizeChange(pageSize: number) {
-  pagination.pageSize = pageSize
-  pagination.page = 1
-  await preference.savePageSize(pageSize)
-  loadPage()
-}
-
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
-}
-
 function handleSearch() {
   pagination.page = 1
   loadPage()
@@ -313,9 +249,7 @@ function handleReset() {
 }
 
 let timer: ReturnType<typeof setInterval> | null = null
-onMounted(async () => {
-  await preference.init()
-  pagination.pageSize = preference.pageSize.value
+onMounted(() => {
   loadStatistics()
   loadPage()
   timer = setInterval(loadStatistics, 10000)

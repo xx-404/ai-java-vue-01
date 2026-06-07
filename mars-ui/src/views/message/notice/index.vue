@@ -42,21 +42,15 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <n-button v-if="hasPermission('sys:notice:add')" type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增通知
-          </n-button>
-          <n-button @click="columnSettingVisible = true">
-            <template #icon><n-icon><SettingsOutline /></n-icon></template>
-            列设置
-          </n-button>
-        </n-space>
+        <n-button v-if="hasPermission('sys:notice:add')" type="primary" @click="handleAdd">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          新增通知
+        </n-button>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="tableColumns"
+        :columns="columns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysNotice) => row.id"
@@ -66,7 +60,7 @@
       <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
         <n-pagination
           v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
+          v-model:page-size="pagination.pageSize"
           :item-count="pagination.itemCount"
           :page-sizes="[10, 20, 50, 100]"
           show-size-picker
@@ -228,23 +222,13 @@
       />
       <n-empty v-if="!sendLogsLoading && sendLogsData.length === 0" description="暂无推送记录" style="margin: 24px 0" />
     </n-modal>
-
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed, watch } from 'vue'
+import { ref, reactive, h, onMounted, computed } from 'vue'
 import { NButton, NTag, NSpace, NPagination, NCheckboxGroup, NCheckbox, NRadioGroup, NRadio, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, SettingsOutline } from '@vicons/ionicons5'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
+import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5'
 import { noticeApi, type SysNotice, type NoticeChannelOption, type NoticeSendLog } from '@/api/message'
 import { deptApi, type SysDept } from '@/api/org'
 import { userApi } from '@/api/system'
@@ -306,81 +290,59 @@ const pagination = reactive({
   pageSizes: [10, 20, 50]
 })
 
-const columnDefs: ColumnDefinition<SysNotice>[] = [
-  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
-  { key: 'title', title: '标题', column: { title: '标题', key: 'title', ellipsis: { tooltip: true } } },
+// 表格列
+const columns: DataTableColumns<SysNotice> = [
+  { title: 'ID', key: 'id', width: 80 },
+  { title: '标题', key: 'title', ellipsis: { tooltip: true } },
   {
-    key: 'noticeType',
     title: '类型',
-    column: {
-      title: '类型',
-      key: 'noticeType',
-      width: 100,
-      render(row) {
-        const typeMap: Record<number, { text: string; type: 'info' | 'warning' }> = {
-          1: { text: '通知', type: 'info' },
-          2: { text: '公告', type: 'warning' }
-        }
-        const config = typeMap[row.noticeType] || { text: '未知', type: 'info' as const }
-        return h(NTag, { type: config.type, size: 'small' }, { default: () => config.text })
+    key: 'noticeType',
+    width: 100,
+    render(row) {
+      const typeMap: Record<number, { text: string; type: 'info' | 'warning' }> = {
+        1: { text: '通知', type: 'info' },
+        2: { text: '公告', type: 'warning' }
       }
+      const config = typeMap[row.noticeType] || { text: '未知', type: 'info' as const }
+      return h(NTag, { type: config.type, size: 'small' }, { default: () => config.text })
     }
   },
   {
-    key: 'status',
     title: '状态',
-    column: {
-      title: '状态',
-      key: 'status',
-      width: 100,
-      render(row) {
-        return h(NTag, {
-          type: row.status === 1 ? 'success' : 'default',
-          size: 'small'
-        }, { default: () => row.status === 1 ? '已发布' : '草稿' })
-      }
+    key: 'status',
+    width: 100,
+    render(row) {
+      return h(NTag, {
+        type: row.status === 1 ? 'success' : 'default',
+        size: 'small'
+      }, { default: () => row.status === 1 ? '已发布' : '草稿' })
     }
   },
-  { key: 'createName', title: '创建者', column: { title: '创建者', key: 'createName', width: 100 } },
-  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
+  { title: '创建者', key: 'createName', width: 100 },
+  { title: '创建时间', key: 'createTime', width: 180 },
   {
-    key: 'actions',
     title: '操作',
+    key: 'actions',
+    width: 300,
     fixed: 'right',
-    column: {
-      title: '操作',
-      key: 'actions',
-      width: 300,
-      fixed: 'right',
-      render(row) {
-        const buttons = [h(NButton, { size: 'small', onClick: () => handleView(row) }, { default: () => '查看' })]
-        if (row.status === 1 && hasPermission('sys:notice:list')) {
-          buttons.push(h(NButton, { size: 'small', onClick: () => handleShowSendLogs(row) }, { default: () => '通知记录' }))
-        }
-        if (hasPermission('sys:notice:edit')) {
-          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
-          if (row.status === 0) {
-            buttons.push(h(NButton, { size: 'small', onClick: () => handlePublish(row) }, { default: () => '发布' }))
-          }
-        }
-        if (hasPermission('sys:notice:delete')) {
-          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
-        }
-        return h(NSpace, null, { default: () => buttons })
+    render(row) {
+      const buttons = [h(NButton, { size: 'small', onClick: () => handleView(row) }, { default: () => '查看' })]
+      if (row.status === 1 && hasPermission('sys:notice:list')) {
+        buttons.push(h(NButton, { size: 'small',  onClick: () => handleShowSendLogs(row) }, { default: () => '通知记录' }))
       }
+      if (hasPermission('sys:notice:edit')) {
+        buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+        if (row.status === 0) {
+          buttons.push(h(NButton, { size: 'small',  onClick: () => handlePublish(row) }, { default: () => '发布' }))
+        }
+      }
+      if (hasPermission('sys:notice:delete')) {
+        buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+      }
+      return h(NSpace, null, { default: () => buttons })
     }
   }
 ]
-
-const preference = useTablePreference<SysNotice>('message/notice', columnDefs, 10)
-const tableColumns = computed(() => preference.columns.value)
-const columnSettingVisible = ref(false)
-
-pagination.pageSize = preference.pageSize.value
-
-watch(preference.pageSize, (newSize) => {
-  pagination.pageSize = newSize
-})
 
 // 弹窗
 const modalVisible = ref(false)
@@ -506,21 +468,10 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-async function handlePageSizeChange(pageSize: number) {
+function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
-  await preference.savePageSize(pageSize)
   loadData()
-}
-
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
 }
 
 async function loadChannels() {
@@ -709,9 +660,7 @@ function handleDelete(row: SysNotice) {
   })
 }
 
-onMounted(async () => {
-  await preference.init()
-  pagination.pageSize = preference.pageSize.value
+onMounted(() => {
   loadData()
   loadChannels()
 })

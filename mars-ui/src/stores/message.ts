@@ -4,25 +4,30 @@ import { wsManager } from '@/utils/websocket'
 
 export interface MessageNotification {
   id: number
-  type: 'notice' | 'chat' | 'alert'
+  type: 'notice' | 'chat'
   title: string
   content: string
   time: number
   read: boolean
-  senderId?: number
-  groupId?: number
-  alertType?: string
+  senderId?: number  // 私聊消息的发送者ID
+  groupId?: number   // 群聊消息的群ID
 }
 
 export const useMessageStore = defineStore('message', () => {
+  // 未读通知数量
   const noticeCount = ref(0)
+  // 未读聊天数量
   const chatCount = ref(0)
-  const alertCount = ref(0)
+  // 通知列表（最近的）
   const notifications = ref<MessageNotification[]>([])
+  // 是否显示通知弹窗
   const showNotification = ref(false)
+  // 当前通知
   const currentNotification = ref<MessageNotification | null>(null)
 
+  // 初始化WebSocket监听
   function initWebSocket() {
+    // 监听通知消息
     wsManager.on('notice', (data) => {
       const notification: MessageNotification = {
         id: Date.now(),
@@ -36,6 +41,7 @@ export const useMessageStore = defineStore('message', () => {
       noticeCount.value++
     })
 
+    // 监听聊天消息（私聊）
     wsManager.on('chat', (data) => {
       const notification: MessageNotification = {
         id: Date.now(),
@@ -50,6 +56,7 @@ export const useMessageStore = defineStore('message', () => {
       chatCount.value++
     })
     
+    // 监听群聊消息
     wsManager.on('groupChat', (data) => {
       const notification: MessageNotification = {
         id: Date.now(),
@@ -64,29 +71,13 @@ export const useMessageStore = defineStore('message', () => {
       chatCount.value++
     })
 
-    wsManager.on('alert', (data) => {
-      const notification: MessageNotification = {
-        id: Date.now(),
-        type: 'alert',
-        title: data.title || '服务器告警',
-        content: data.content || '',
-        time: data.time || Date.now(),
-        read: false,
-        alertType: data.alertType
-      }
-      addNotification(notification)
-      if (data.recovered) {
-        alertCount.value = Math.max(0, alertCount.value - 1)
-      } else {
-        alertCount.value++
-      }
-    })
-
+    // 监听未读数量更新
     wsManager.on('unread', (data) => {
       noticeCount.value = data.noticeCount || 0
       chatCount.value = data.chatCount || 0
     })
 
+    // 连接WebSocket
     wsManager.connect()
   }
 
@@ -135,12 +126,12 @@ export const useMessageStore = defineStore('message', () => {
     wsManager.disconnect()
   }
 
-  const totalUnread = () => noticeCount.value + chatCount.value + alertCount.value
+  // 总未读数
+  const totalUnread = () => noticeCount.value + chatCount.value
 
   return {
     noticeCount,
     chatCount,
-    alertCount,
     notifications,
     showNotification,
     currentNotification,

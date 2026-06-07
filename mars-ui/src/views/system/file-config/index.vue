@@ -33,41 +33,22 @@
       
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <n-button type="primary" @click="handleAdd">
-            <template #icon><n-icon><AddOutline /></n-icon></template>
-            新增配置
-          </n-button>
-          <n-button @click="columnSettingVisible = true">
-            <template #icon><n-icon><SettingsOutline /></n-icon></template>
-            列设置
-          </n-button>
-        </n-space>
+        <n-button type="primary" @click="handleAdd">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          新增配置
+        </n-button>
       </div>
       
       <!-- 表格 -->
       <n-data-table
-        :columns="tableColumns"
+        :columns="columns"
         :data="tableData"
         :loading="loading"
+        :pagination="pagination"
         :row-key="(row: SysFileConfig) => row.id"
+        @update:page="handlePageChange"
+        @update:page-size="handlePageSizeChange"
       />
-      <div style="display: flex; justify-content: flex-end; margin-top: 12px">
-        <n-pagination
-          v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
-          :item-count="pagination.itemCount"
-          :page-sizes="[10, 20, 50, 100]"
-          show-size-picker
-          show-quick-jumper
-          @update:page="handlePageChange"
-          @update:page-size="handlePageSizeChange"
-        >
-          <template #prefix>
-            共 {{ pagination.itemCount }} 条
-          </template>
-        </n-pagination>
-      </div>
     </n-card>
     
     <!-- 新增/编辑弹窗 -->
@@ -168,30 +149,17 @@
         </n-space>
       </template>
     </n-modal>
-
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, h, onMounted, computed, watch } from 'vue'
-import { NButton, NTag, NSpace, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, SettingsOutline } from '@vicons/ionicons5'
+import { ref, reactive, h, onMounted } from 'vue'
+import { NButton, NTag, NSpace, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5'
 import { fileConfigApi, type SysFileConfig } from '@/api/system'
-import { useUserStore } from '@/stores/user'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
-const userStore = useUserStore()
-const hasPermission = (permission: string) => userStore.hasPermission(permission)
 
 // 搜索表单
 const searchForm = reactive({
@@ -217,90 +185,64 @@ const pagination = reactive({
   pageSizes: [10, 20, 50]
 })
 
-const columnDefs: ColumnDefinition<SysFileConfig>[] = [
-  { key: 'id', title: 'ID', column: { title: 'ID', key: 'id', width: 80 } },
-  { key: 'name', title: '配置名称', column: { title: '配置名称', key: 'name', width: 150 } },
+// 表格列
+const columns: DataTableColumns<SysFileConfig> = [
+  { title: 'ID', key: 'id', width: 80 },
+  { title: '配置名称', key: 'name', width: 150 },
   {
-    key: 'storageType',
     title: '存储类型',
-    column: {
-      title: '存储类型',
-      key: 'storageType',
-      width: 120,
-      render(row) {
-        const typeMap: Record<string, { text: string; type: 'default' | 'success' | 'info' }> = {
-          local: { text: '本地存储', type: 'default' },
-          minio: { text: 'MinIO', type: 'success' },
-          aliyun: { text: '阿里云OSS', type: 'info' }
-        }
-        const config = typeMap[row.storageType] || { text: row.storageType, type: 'default' as const }
-        return h(NTag, { type: config.type, size: 'small' }, { default: () => config.text })
+    key: 'storageType',
+    width: 120,
+    render(row) {
+      const typeMap: Record<string, { text: string; type: 'default' | 'success' | 'info' }> = {
+        local: { text: '本地存储', type: 'default' },
+        minio: { text: 'MinIO', type: 'success' },
+        aliyun: { text: '阿里云OSS', type: 'info' }
       }
+      const config = typeMap[row.storageType] || { text: row.storageType, type: 'default' as const }
+      return h(NTag, { type: config.type, size: 'small' }, { default: () => config.text })
     }
   },
   {
-    key: 'master',
     title: '主配置',
-    column: {
-      title: '主配置',
-      key: 'master',
-      width: 80,
-      render(row) {
-        return h(NTag, {
-          type: row.master === 1 ? 'success' : 'default',
-          size: 'small'
-        }, { default: () => row.master === 1 ? '是' : '否' })
-      }
+    key: 'master',
+    width: 80,
+    render(row) {
+      return h(NTag, {
+        type: row.master === 1 ? 'success' : 'default',
+        size: 'small'
+      }, { default: () => row.master === 1 ? '是' : '否' })
     }
   },
-  { key: 'domain', title: '访问域名', column: { title: '访问域名', key: 'domain', ellipsis: { tooltip: true } } },
+  { title: '访问域名', key: 'domain', ellipsis: { tooltip: true } },
   {
-    key: 'status',
     title: '状态',
-    column: {
-      title: '状态',
-      key: 'status',
-      width: 80,
-      render(row) {
-        return h(NTag, {
-          type: row.status === 1 ? 'success' : 'error',
-          size: 'small'
-        }, { default: () => row.status === 1 ? '启用' : '禁用' })
-      }
+    key: 'status',
+    width: 80,
+    render(row) {
+      return h(NTag, {
+        type: row.status === 1 ? 'success' : 'error',
+        size: 'small'
+      }, { default: () => row.status === 1 ? '启用' : '禁用' })
     }
   },
-  { key: 'createTime', title: '创建时间', column: { title: '创建时间', key: 'createTime', width: 180 } },
+  { title: '创建时间', key: 'createTime', width: 180 },
   {
-    key: 'actions',
     title: '操作',
+    key: 'actions',
+    width: 250,
     fixed: 'right',
-    column: {
-      title: '操作',
-      key: 'actions',
-      width: 250,
-      fixed: 'right',
-      render(row) {
-        return h(NSpace, null, {
-          default: () => [
-            h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
-            row.master !== 1 ? h(NButton, { size: 'small', type: 'info', onClick: () => handleSetMaster(row) }, { default: () => '设为主配置' }) : null,
-            h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row), disabled: row.master === 1 }, { default: () => '删除' })
-          ].filter(Boolean)
-        })
-      }
+    render(row) {
+      return h(NSpace, null, {
+        default: () => [
+          h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }),
+          row.master !== 1 ? h(NButton, { size: 'small', type: 'info', onClick: () => handleSetMaster(row) }, { default: () => '设为主配置' }) : null,
+          h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row), disabled: row.master === 1 }, { default: () => '删除' })
+        ].filter(Boolean)
+      })
     }
   }
 ]
-
-const preference = useTablePreference<SysFileConfig>('system/file-config', columnDefs, 10)
-const tableColumns = computed(() => preference.columns.value)
-const columnSettingVisible = ref(false)
-
-pagination.pageSize = preference.pageSize.value
-
-watch(preference.pageSize, (newSize) => {
-  pagination.pageSize = newSize
-})
 
 // 弹窗
 const modalVisible = ref(false)
@@ -369,10 +311,9 @@ function handlePageChange(page: number) {
   loadData()
 }
 
-async function handlePageSizeChange(pageSize: number) {
+function handlePageSizeChange(pageSize: number) {
   pagination.pageSize = pageSize
   pagination.page = 1
-  await preference.savePageSize(pageSize)
   loadData()
 }
 
@@ -487,19 +428,7 @@ function handleDelete(row: SysFileConfig) {
   })
 }
 
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
-}
-
-onMounted(async () => {
-  await preference.init()
-  pagination.pageSize = preference.pageSize.value
+onMounted(() => {
   loadData()
 })
 </script>

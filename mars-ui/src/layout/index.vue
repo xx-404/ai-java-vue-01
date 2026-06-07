@@ -662,7 +662,6 @@ function getIconName(key: string): string {
     '/system/config': 'SettingsSharp',
     '/org/dept': 'GitNetworkOutline',
     '/org/post': 'IdCardOutline',
-    '/org/structure': 'BusinessOutline',
     '/log/operlog': 'ListOutline',
     '/log/loginlog': 'LogInOutline',
     '/system/file': 'DocumentOutline',
@@ -813,15 +812,6 @@ const breadcrumbs = computed(() => {
       items.push({ path: '/system/role', title: '角色管理' })
     } else if (route.path === '/system/menu') {
       items.push({ path: '/system/menu', title: '菜单管理' })
-    }
-  } else if (route.path.startsWith('/org')) {
-    items.push({ path: '/org', title: '组织管理' })
-    if (route.path === '/org/dept') {
-      items.push({ path: '/org/dept', title: '部门管理' })
-    } else if (route.path === '/org/post') {
-      items.push({ path: '/org/post', title: '岗位管理' })
-    } else if (route.path === '/org/structure') {
-      items.push({ path: '/org/structure', title: '组织架构' })
     }
   }
   return items

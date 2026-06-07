@@ -33,55 +33,21 @@
 
       <!-- 工具栏 -->
       <div class="table-toolbar">
-        <n-space justify="space-between" style="width: 100%">
-          <n-space>
-            <n-button v-if="hasPermission('sys:menu:add')" type="primary" @click="handleAdd()">
-              <template #icon><n-icon><AddOutline /></n-icon></template>
-              新增菜单
-            </n-button>
-          </n-space>
-          <n-button @click="columnSettingVisible = true">
-            <template #icon><n-icon><SettingsOutline /></n-icon></template>
-            列设置
-          </n-button>
-        </n-space>
+        <n-button v-if="hasPermission('sys:menu:add')" type="primary" @click="handleAdd()">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          新增菜单
+        </n-button>
       </div>
 
       <!-- 表格 -->
       <n-data-table
-        :columns="tableColumns"
+        :columns="columns"
         :data="tableData"
         :loading="loading"
         :row-key="(row: SysMenu) => row.id"
         default-expand-all
       />
-
-      <!-- 分页 -->
-      <div class="pagination-container" style="display: flex; justify-content: flex-end; margin-top: 12px">
-        <n-pagination
-          v-model:page="pagination.page"
-          v-model:page-size="preference.pageSize"
-          :item-count="pagination.itemCount"
-          :page-sizes="[10, 20, 50, 100]"
-          show-size-picker
-          show-quick-jumper
-          @update:page-size="handlePageSizeChange"
-        >
-          <template #prefix>
-            共 {{ pagination.itemCount }} 条
-          </template>
-        </n-pagination>
-      </div>
     </n-card>
-
-    <!-- 列设置弹窗 -->
-    <TableColumnSetting
-      v-model:show="columnSettingVisible"
-      :column-defs="preference.columnDefs"
-      :column-configs="preference.columnConfigs"
-      @confirm="handleColumnConfirm"
-      @reset="handleColumnReset"
-    />
 
     <!-- 新增/编辑弹窗 -->
     <n-modal
@@ -168,192 +134,44 @@
 
 <script setup lang="ts">
 import { ref, reactive, h, onMounted, computed } from 'vue'
-import { NButton, NTag, NSpace, NIcon, NPagination, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeSelectOption } from 'naive-ui'
-import { SearchOutline, RefreshOutline, AddOutline, SettingsOutline } from '@vicons/ionicons5'
+import { NButton, NTag, NSpace, NIcon, useMessage, useDialog, type DataTableColumns, type FormInst, type FormRules, type TreeSelectOption } from 'naive-ui'
+import { SearchOutline, RefreshOutline, AddOutline } from '@vicons/ionicons5'
 import { menuApi, type SysMenu } from '@/api/system'
 import IconSelect from '@/components/IconSelect.vue'
-import TableColumnSetting from '@/components/TableColumnSetting.vue'
 import { getIconComponent } from '@/utils/icons'
 import { useUserStore } from '@/stores/user'
-import { useTablePreference, type ColumnDefinition } from '@/composables/useTablePreference'
 
 const message = useMessage()
 const dialog = useDialog()
 const userStore = useUserStore()
 
+// 权限检查
 const hasPermission = (permission: string) => userStore.hasPermission(permission)
 
+// 搜索表单
 const searchForm = reactive({
   name: '',
   status: null as number | null
 })
 
+// 状态选项
 const statusOptions = [
   { label: '启用', value: 1 },
   { label: '禁用', value: 0 }
 ]
 
+// 菜单类型
 const typeMap: Record<number, { text: string; type: 'info' | 'success' | 'warning' }> = {
   1: { text: '目录', type: 'info' },
   2: { text: '菜单', type: 'success' },
   3: { text: '按钮', type: 'warning' }
 }
 
+// 表格数据
 const tableData = ref<SysMenu[]>([])
 const loading = ref(false)
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 10,
-  itemCount: 0
-})
-
-const columnDefs: ColumnDefinition<SysMenu>[] = [
-  {
-    key: 'name',
-    title: '菜单名称',
-    column: { title: '菜单名称', key: 'name', width: 200 }
-  },
-  {
-    key: 'type',
-    title: '类型',
-    column: {
-      title: '类型',
-      key: 'type',
-      width: 120,
-      render(row) {
-        const info = typeMap[row.type]
-        return h(NTag, { type: info.type, size: 'small' }, { default: () => info.text })
-      }
-    }
-  },
-  {
-    key: 'icon',
-    title: '图标',
-    column: {
-      title: '图标',
-      key: 'icon',
-      width: 180,
-      render(row) {
-        if (!row.icon) return '-'
-        const iconComponent = getIconComponent(row.icon)
-        if (iconComponent) {
-          return h(NSpace, { align: 'center' }, {
-            default: () => [
-              h(NIcon, { size: 18 }, { default: () => h(iconComponent) }),
-              h('span', { style: { fontSize: '12px', color: '#666' } }, row.icon)
-            ]
-          })
-        }
-        return row.icon
-      }
-    }
-  },
-  {
-    key: 'path',
-    title: '路由地址',
-    column: {
-      title: '路由地址',
-      key: 'path',
-      width: 200,
-      render(row) {
-        return row.path || '-'
-      }
-    }
-  },
-  {
-    key: 'component',
-    title: '组件路径',
-    column: {
-      title: '组件路径',
-      key: 'component',
-      width: 200,
-      render(row) {
-        return row.component || '-'
-      }
-    }
-  },
-  {
-    key: 'permission',
-    title: '权限标识',
-    column: {
-      title: '权限标识',
-      key: 'permission',
-      width: 200,
-      render(row) {
-        return row.permission || '-'
-      }
-    }
-  },
-  {
-    key: 'sort',
-    title: '排序',
-    column: { title: '排序', key: 'sort', width: 80 }
-  },
-  {
-    key: 'visible',
-    title: '可见',
-    column: {
-      title: '可见',
-      key: 'visible',
-      width: 80,
-      render(row) {
-        if (row.type === 3) return '-'
-        return h(
-          NTag,
-          { type: row.visible === 1 ? 'success' : 'default', size: 'small' },
-          { default: () => (row.visible === 1 ? '是' : '否') }
-        )
-      }
-    }
-  },
-  {
-    key: 'status',
-    title: '状态',
-    column: {
-      title: '状态',
-      key: 'status',
-      width: 80,
-      render(row) {
-        return h(
-          NTag,
-          { type: row.status === 1 ? 'success' : 'error', size: 'small' },
-          { default: () => (row.status === 1 ? '启用' : '禁用') }
-        )
-      }
-    }
-  },
-  {
-    key: 'actions',
-    title: '操作',
-    fixed: 'right',
-    column: {
-      title: '操作',
-      key: 'actions',
-      width: 200,
-      fixed: 'right',
-      render(row) {
-        const buttons = []
-        if (row.type !== 3 && hasPermission('sys:menu:add')) {
-          buttons.push(h(NButton, { size: 'small', onClick: () => handleAdd(row.id) }, { default: () => '新增' }))
-        }
-        if (hasPermission('sys:menu:edit')) {
-          buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
-        }
-        if (hasPermission('sys:menu:delete')) {
-          buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
-        }
-        return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
-      }
-    }
-  }
-]
-
-const preference = useTablePreference<SysMenu>('system/menu', columnDefs, 10)
-const tableColumns = computed(() => preference.columns.value)
-
-const columnSettingVisible = ref(false)
-
+// 菜单选项（用于选择上级）
 const menuOptions = computed<TreeSelectOption[]>(() => {
   const options: TreeSelectOption[] = [
     { key: 0, label: '顶级菜单' }
@@ -361,7 +179,7 @@ const menuOptions = computed<TreeSelectOption[]>(() => {
 
   function convert(menus: SysMenu[]): TreeSelectOption[] {
     return menus
-      .filter(m => m.type !== 3)
+      .filter(m => m.type !== 3) // 按钮不能作为上级
       .map(menu => ({
         key: menu.id,
         label: menu.name,
@@ -373,56 +191,93 @@ const menuOptions = computed<TreeSelectOption[]>(() => {
   return options
 })
 
-function flattenMenus(menus: SysMenu[]): number {
-  let count = 0
-  menus.forEach(menu => {
-    count++
-    if (menu.children) {
-      count += flattenMenus(menu.children)
+// 表格列
+const columns: DataTableColumns<SysMenu> = [
+  { title: '菜单名称', key: 'name', width: 200 },
+  {
+    title: '类型',
+    key: 'type',
+    width: 120,
+    render(row) {
+      const info = typeMap[row.type]
+      return h(NTag, { type: info.type, size: 'small' }, { default: () => info.text })
     }
-  })
-  return count
-}
-
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await menuApi.tree({
-      name: searchForm.name || undefined,
-      status: searchForm.status ?? undefined
-    })
-    tableData.value = res
-    pagination.itemCount = flattenMenus(res)
-  } catch (error) {
-  } finally {
-    loading.value = false
+  },
+  {
+    title: '图标',
+    key: 'icon',
+    width: 180,
+    render(row) {
+      if (!row.icon) return '-'
+      const iconComponent = getIconComponent(row.icon)
+      if (iconComponent) {
+        return h(NSpace, { align: 'center' }, {
+          default: () => [
+            h(NIcon, { size: 18 }, { default: () => h(iconComponent) }),
+            h('span', { style: { fontSize: '12px', color: '#666' } }, row.icon)
+          ]
+        })
+      }
+      return row.icon
+    }
+  },
+  { title: '路由地址', key: 'path', width: 200 , render(row) {
+      return row.path || '-'
+    }},
+  { title: '组件路径', key: 'component', width: 200 , render(row) {
+      return row.component || '-'
+    }},
+  { title: '权限标识', key: 'permission', width: 200 , render(row) {
+      return row.permission || '-'
+    }},
+  { title: '排序', key: 'sort', width: 80 },
+  {
+    title: '可见',
+    key: 'visible',
+    width: 80,
+    render(row) {
+      if (row.type === 3) return '-'
+      return h(
+        NTag,
+        { type: row.visible === 1 ? 'success' : 'default', size: 'small' },
+        { default: () => (row.visible === 1 ? '是' : '否') }
+      )
+    }
+  },
+  {
+    title: '状态',
+    key: 'status',
+    width: 80,
+    render(row) {
+      return h(
+        NTag,
+        { type: row.status === 1 ? 'success' : 'error', size: 'small' },
+        { default: () => (row.status === 1 ? '启用' : '禁用') }
+      )
+    }
+  },
+  {
+    title: '操作',
+    key: 'actions',
+    width: 200,
+    fixed: 'right',
+    render(row) {
+      const buttons = []
+      if (row.type !== 3 && hasPermission('sys:menu:add')) {
+        buttons.push(h(NButton, { size: 'small', onClick: () => handleAdd(row.id) }, { default: () => '新增' }))
+      }
+      if (hasPermission('sys:menu:edit')) {
+        buttons.push(h(NButton, { size: 'small', onClick: () => handleEdit(row) }, { default: () => '编辑' }))
+      }
+      if (hasPermission('sys:menu:delete')) {
+        buttons.push(h(NButton, { size: 'small', type: 'error', onClick: () => handleDelete(row) }, { default: () => '删除' }))
+      }
+      return buttons.length > 0 ? h(NSpace, null, { default: () => buttons }) : '-'
+    }
   }
-}
+]
 
-function handleSearch() {
-  loadData()
-}
-
-function handleReset() {
-  searchForm.name = ''
-  searchForm.status = null
-  handleSearch()
-}
-
-async function handlePageSizeChange(size: number) {
-  await preference.savePageSize(size)
-}
-
-async function handleColumnConfirm(configs: any[]) {
-  await preference.updateColumnOrder(configs)
-  message.success('列设置已保存')
-}
-
-async function handleColumnReset() {
-  await preference.resetToDefault()
-  message.success('已恢复默认设置')
-}
-
+// 弹窗
 const modalVisible = ref(false)
 const modalTitle = ref('新增菜单')
 const formRef = ref<FormInst | null>(null)
@@ -448,6 +303,35 @@ const rules: FormRules = {
   type: [{ required: true, type: 'number', message: '请选择菜单类型', trigger: 'change' }]
 }
 
+// 加载数据
+async function loadData() {
+  loading.value = true
+  try {
+    const res = await menuApi.tree({
+      name: searchForm.name || undefined,
+      status: searchForm.status ?? undefined
+    })
+    tableData.value = res
+  } catch (error) {
+    // 错误已在拦截器处理
+  } finally {
+    loading.value = false
+  }
+}
+
+// 搜索
+function handleSearch() {
+  loadData()
+}
+
+// 重置
+function handleReset() {
+  searchForm.name = ''
+  searchForm.status = null
+  handleSearch()
+}
+
+// 新增
 function handleAdd(parentId?: number) {
   modalTitle.value = '新增菜单'
   Object.assign(formData, {
@@ -467,12 +351,14 @@ function handleAdd(parentId?: number) {
   modalVisible.value = true
 }
 
+// 编辑
 function handleEdit(row: SysMenu) {
   modalTitle.value = '编辑菜单'
   Object.assign(formData, { ...row })
   modalVisible.value = true
 }
 
+// 提交
 async function handleSubmit() {
   try {
     await formRef.value?.validate()
@@ -489,11 +375,13 @@ async function handleSubmit() {
     modalVisible.value = false
     loadData()
   } catch (error) {
+    // 错误已在拦截器处理
   } finally {
     submitLoading.value = false
   }
 }
 
+// 删除
 function handleDelete(row: SysMenu) {
   dialog.warning({
     title: '提示',
@@ -506,13 +394,13 @@ function handleDelete(row: SysMenu) {
         message.success('删除成功')
         loadData()
       } catch (error) {
+        // 错误已在拦截器处理
       }
     }
   })
 }
 
-onMounted(async () => {
-  await preference.init()
+onMounted(() => {
   loadData()
 })
 </script>

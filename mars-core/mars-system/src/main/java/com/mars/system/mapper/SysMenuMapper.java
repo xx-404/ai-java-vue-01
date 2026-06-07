@@ -36,18 +36,4 @@ public interface SysMenuMapper extends BaseMapper<SysMenu> {
      */
     @Select("SELECT COUNT(*) FROM sys_menu WHERE type = 2 AND deleted = 0")
     Long selectPermissionCount();
-
-    /**
-     * 根据菜单ID列表获取权限标识列表
-     */
-    @Select("<script>SELECT DISTINCT permission FROM sys_menu WHERE id IN " +
-            "<foreach item='item' index='index' collection='menuIds' open='(' separator=',' close=')'>#{item}</foreach> " +
-            "AND status = 1 AND deleted = 0 AND permission IS NOT NULL AND permission != ''</script>")
-    List<String> selectPermissionsByMenuIds(@Param("menuIds") List<Long> menuIds);
-
-    /**
-     * 获取所有权限标识列表（超级管理员使用）
-     */
-    @Select("SELECT DISTINCT permission FROM sys_menu WHERE status = 1 AND deleted = 0 AND permission IS NOT NULL AND permission != ''")
-    List<String> selectAllPermissions();
 }
