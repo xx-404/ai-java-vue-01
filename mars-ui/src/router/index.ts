@@ -185,6 +185,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/tool/gen/index.vue'),
         meta: { title: '代码生成', icon: 'CodeSlashOutline' }
       },
+      {
+        path: 'tool/docx',
+        name: 'ToolDocx',
+        component: () => import('@/views/tool/docx/index.vue'),
+        meta: { title: 'DOCX工具', icon: 'DocumentTextOutline' }
+      },
       // 页签刷新中转路由
       {
         path: 'redirect/:path(.*)',
