@@ -185,8 +185,9 @@ public class DocxServiceImpl implements DocxService {
         target.setColor(source.getColor());
         target.setStrikeThrough(source.isStrikeThrough());
         target.setDoubleStrikethrough(source.isDoubleStrikeThrough());
-        if (source.getTextPosition() != null) {
-            target.setTextPosition(source.getTextPosition());
+        int textPosition = source.getTextPosition();
+        if (textPosition != 0) {
+            target.setTextPosition(textPosition);
         }
     }
 
